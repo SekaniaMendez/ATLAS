@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/daniel/Dev/ATLAS/build/cmake_install.cmake",
+		"/Users/daniel/Dev/ATLAS/build/core/cmake_install.cmake",
+		"/Users/daniel/Dev/ATLAS/build/apps/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

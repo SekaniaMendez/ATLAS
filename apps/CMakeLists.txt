@@ -1,0 +1,1 @@
+# Placeholder: apps will be added here (viewer, recorder, playback, tools)
