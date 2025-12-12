@@ -1,0 +1,12 @@
+# Build outputs
+build/
+cmake-build-*/
+out/
+bin/
+lib/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
