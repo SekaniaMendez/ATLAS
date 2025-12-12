@@ -1,0 +1,44 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "mac-debug",
+            "displayName": "macOS Debug (Ninja)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/mac-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "ATLAS_BUILD_APPS": "ON",
+                "ATLAS_BUILD_TESTS": "OFF",
+                "ATLAS_WARNINGS_AS_ERRORS": "OFF"
+            }
+        },
+        {
+            "name": "mac-release",
+            "displayName": "macOS Release (Ninja)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/mac-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "ATLAS_BUILD_APPS": "ON",
+                "ATLAS_BUILD_TESTS": "OFF",
+                "ATLAS_WARNINGS_AS_ERRORS": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "mac-debug",
+            "configurePreset": "mac-debug"
+        },
+        {
+            "name": "mac-release",
+            "configurePreset": "mac-release"
+        }
+    ]
+}
