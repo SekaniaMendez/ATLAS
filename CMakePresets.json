@@ -12,6 +12,7 @@
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/mac-debug",
             "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
                 "CMAKE_BUILD_TYPE": "Debug",
                 "ATLAS_BUILD_APPS": "ON",
                 "ATLAS_BUILD_TESTS": "OFF",

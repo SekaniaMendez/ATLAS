@@ -84,6 +84,13 @@ if(ATLAS_ENABLE_LIVOX)
   endif()
 endif()
 
+# ----------------------------
+# Modules
+# ----------------------------
+if(ATLAS_ENABLE_LIVOX)
+  add_subdirectory(modules/livox)
+endif()
+
 if(ATLAS_BUILD_APPS)
   add_subdirectory(apps)
 endif()
