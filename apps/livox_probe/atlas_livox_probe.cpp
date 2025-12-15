@@ -130,6 +130,7 @@ int main(int argc, char** argv) {
       std::cerr << " (config_path='" << config_path << "')";
     }
     std::cerr << "\n";
+    // Initialization failed, exit.
     return 1;
   }
 
