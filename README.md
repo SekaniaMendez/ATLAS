@@ -134,9 +134,17 @@ ATLAS will provide multiple visualization paths:
 
 ```
 ATLAS/
-├── core/          # math, geometry, time, utilities
-├── modules/       # lidar, gnss, slam, mapping modules
-├── apps/          # executables (probes, tools, demos)
+├── core/
+│   ├── common/       # shared primitives and utilities
+│   ├── imu/          # IMU models and processing
+│   ├── gnss/         # GNSS interfaces, readers and positioning
+│   ├── timesync/     # synchronization between sensor clocks
+│   ├── slam/         # LiDAR-inertial state estimation and mapping
+│   ├── sdk-coms/     # sensor/platform SDK adapters (Livox, ARKit)
+│   └── ui-coms/      # communication with client UIs (iOS)
+├── ai/            # optional 3D perception and local models
+├── apps/          # probes, streaming demos and the native iOS viewer
+├── config/        # runtime sensor configuration
 ├── third_party/   # vendor SDKs (as submodules)
 ├── tools/         # offline processing utilities
 └── docs/          # technical documentation
@@ -149,11 +157,12 @@ ATLAS/
 - [x] Cross-platform build system (CMake + Ninja)
 - [x] Vendor SDK integration (Livox-SDK2)
 - [x] Hardware communication probe (device discovery / IMU enable)
-- [ ] Real-time point cloud ingestion pipeline
+- [x] MID-360 point/IMU decoding and sensor data bus
+- [x] Live Mac-to-iPhone point stream and Metal viewer
 - [ ] LiDAR–Inertial SLAM core
 - [ ] GNSS fusion & georeferencing
 - [ ] AI perception modules
-- [ ] Visualization pipeline
+- [x] Initial real-time visualization pipeline
 
 ---
 

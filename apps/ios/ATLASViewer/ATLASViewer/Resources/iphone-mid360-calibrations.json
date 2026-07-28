@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "id": "iphone14pro-mid360-upright-v0",
+      "display_name": "iPhone 14 Pro",
+      "device_identifiers": ["iPhone15,2"],
+      "dimensions_mm": { "height": 147.5, "width": 71.5, "thickness": 7.85 },
+      "lidar_to_camera": {
+        "translation_m": [0.075, -0.025, -0.031],
+        "rotation_matrix_row_major": [0, 0, -1, 0, -1, 0, -1, 0, 0]
+      },
+      "verified": false,
+      "notes": "MID360 vertical: semiesfera +Z hacia la parte superior del iPhone, conector hacia la pantalla y +X hacia la cámara trasera. Debe refinarse con overlay RGB."
+    },
+    {
+      "id": "iphone14promax-mid360-upright-v0",
+      "display_name": "iPhone 14 Pro Max",
+      "device_identifiers": ["iPhone15,3"],
+      "dimensions_mm": { "height": 160.7, "width": 77.6, "thickness": 7.85 },
+      "lidar_to_camera": {
+        "translation_m": [0.075, -0.028, -0.031],
+        "rotation_matrix_row_major": [0, 0, -1, 0, -1, 0, -1, 0, 0]
+      },
+      "verified": false,
+      "notes": "Semilla para un armazón equivalente; medir la posición real del MID360."
+    },
+    {
+      "id": "iphone15pro-mid360-upright-v0",
+      "display_name": "iPhone 15 Pro",
+      "device_identifiers": ["iPhone16,1"],
+      "dimensions_mm": { "height": 146.6, "width": 70.6, "thickness": 8.25 },
+      "lidar_to_camera": {
+        "translation_m": [0.075, -0.025, -0.031],
+        "rotation_matrix_row_major": [0, 0, -1, 0, -1, 0, -1, 0, 0]
+      },
+      "verified": false,
+      "notes": "Semilla para un armazón equivalente; medir la posición real del MID360."
+    },
+    {
+      "id": "iphone15promax-mid360-upright-v0",
+      "display_name": "iPhone 15 Pro Max",
+      "device_identifiers": ["iPhone16,2"],
+      "dimensions_mm": { "height": 159.9, "width": 76.7, "thickness": 8.25 },
+      "lidar_to_camera": {
+        "translation_m": [0.075, -0.028, -0.031],
+        "rotation_matrix_row_major": [0, 0, -1, 0, -1, 0, -1, 0, 0]
+      },
+      "verified": false,
+      "notes": "Semilla para un armazón equivalente; medir la posición real del MID360."
+    },
+    {
+      "id": "iphone16pro-mid360-upright-v0",
+      "display_name": "iPhone 16 Pro",
+      "device_identifiers": ["iPhone17,1"],
+      "dimensions_mm": { "height": 149.6, "width": 71.5, "thickness": 8.25 },
+      "lidar_to_camera": {
+        "translation_m": [0.075, -0.025, -0.031],
+        "rotation_matrix_row_major": [0, 0, -1, 0, -1, 0, -1, 0, 0]
+      },
+      "verified": false,
+      "notes": "Semilla para un armazón equivalente; medir la posición real del MID360."
+    },
+    {
+      "id": "iphone16promax-mid360-upright-v0",
+      "display_name": "iPhone 16 Pro Max",
+      "device_identifiers": ["iPhone17,2"],
+      "dimensions_mm": { "height": 163.0, "width": 77.6, "thickness": 8.25 },
+      "lidar_to_camera": {
+        "translation_m": [0.075, -0.028, -0.031],
+        "rotation_matrix_row_major": [0, 0, -1, 0, -1, 0, -1, 0, 0]
+      },
+      "verified": false,
+      "notes": "Semilla para un armazón equivalente; medir la posición real del MID360."
+    },
+    {
+      "id": "generic-mid360-upright-v0",
+      "display_name": "iPhone genérico",
+      "device_identifiers": [],
+      "dimensions_mm": { "height": 0, "width": 0, "thickness": 0 },
+      "lidar_to_camera": {
+        "translation_m": [0.075, 0, -0.031],
+        "rotation_matrix_row_major": [0, 0, -1, 0, -1, 0, -1, 0, 0]
+      },
+      "verified": false,
+      "notes": "Plantilla para agregar un modelo nuevo; completar dimensiones y calibrar los seis grados de libertad."
+    }
+  ]
+}

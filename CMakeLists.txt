@@ -24,6 +24,7 @@ endif()
 # Build toggles
 option(ATLAS_BUILD_APPS  "Build ATLAS applications" ON)
 option(ATLAS_BUILD_TESTS "Build ATLAS tests" OFF)
+option(ATLAS_ENABLE_UI_STREAM "Enable TCP point-cloud streaming for UI clients" ON)
 
 # Optional: enable hardware integration via the Livox SDK (e.g., Mid-360).
 # - OFF by default to keep ATLAS ROS-independent and buildable without vendor SDKs.
@@ -88,7 +89,15 @@ endif()
 # Modules
 # ----------------------------
 if(ATLAS_ENABLE_LIVOX)
-  add_subdirectory(modules/livox)
+  add_subdirectory(core/sdk-coms/livox)
+endif()
+
+if(ATLAS_ENABLE_UI_STREAM)
+  if(UNIX)
+    add_subdirectory(core/ui-coms/atlas-stream)
+  else()
+    message(WARNING "ATLAS UI streaming is currently available on macOS/Linux only")
+  endif()
 endif()
 
 if(ATLAS_BUILD_APPS)

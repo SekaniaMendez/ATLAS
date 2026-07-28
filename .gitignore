@@ -9,4 +9,7 @@ lib/
 .DS_Store
 .vscode/
 .idea/
+DerivedData/
+xcuserdata/
+*.xcuserstate
 *.swp

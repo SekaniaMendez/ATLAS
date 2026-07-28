@@ -1,150 +1,109 @@
-/// @file atlas_livox_probe.cpp
-/// @brief Simple Livox LiDAR probe application.
-///
-/// This application initializes the Livox LiDAR SDK, listens for device discovery,
-/// enables point and IMU data streaming on the first discovered device, and prints
-/// basic information and data callbacks to the console.
-///
-/// It does NOT perform advanced data processing, visualization, or storage.
+#include <atlas/livox/LivoxSource.hpp>
+#include <atlas/sensors/ISensorDataSink.hpp>
+#include <atlas/sensors/SensorDataBus.hpp>
 
-#include <livox_lidar_api.h>
-#include <livox_lidar_def.h>
-
+#ifdef ATLAS_HAS_UI_STREAM
+#include <atlas/ui/UiStreamServer.hpp>
+#endif
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <iostream>
+#include <memory>
 #include <thread>
 
 namespace {
-/// @brief Atomic flag indicating whether the application is running.
-/// Used for clean shutdown on Ctrl+C.
+
 std::atomic_bool g_running{true};
 
-/// @brief Atomic variable storing the handle of the first discovered device.
-/// Used to enable streaming only once.
-std::atomic_uint32_t g_first_handle{0};
+void on_signal(int) { g_running.store(false); }
 
-/// @brief Signal handler for SIGINT (Ctrl+C).
-/// @param signum The signal number (ignored).
-/// Sets the running flag to false to terminate the main loop.
-void OnSignal(int) { g_running = false; }
-
-/// @brief Async control callback used by many SDK control functions.
-/// Prints the status and handle of the async control response.
-/// @param status Status code returned by the SDK operation.
-/// @param handle Device handle associated with the async control.
-/// @param response Pointer to the async control response (unused).
-/// @param client_data User data passed to the callback (unused).
-void OnAsyncCtrl(livox_status status, uint32_t handle, LivoxLidarAsyncControlResponse* /*response*/,
-                 void* /*client_data*/) {
-  std::cout << "[Livox] async: status=" << int(status) << " handle=" << handle << "\n";
-}
-
-/// @brief Device info callback invoked when device info is received.
-/// Prints the device handle, device type, and optional info string.
-/// @param handle Device handle.
-/// @param dev_type Device type identifier.
-/// @param info Optional device info string (often JSON-like).
-/// @param client_data User data passed to the callback (unused).
-void OnInfo(const uint32_t handle, const uint8_t dev_type, const char* info,
-            void* /*client_data*/) {
-  std::cout << "[Livox] info: handle=" << handle << " dev_type=" << unsigned(dev_type);
-  if (info) {
-    std::cout << " info=" << info;
+class ConsoleSink final : public atlas::sensors::ISensorDataSink {
+ public:
+  void on_lidar_frame(const atlas::sensors::LidarFrame& frame) override {
+    const auto packet_number = point_packets_.fetch_add(1) + 1;
+    if (packet_number % 50 == 0) {
+      std::cout << "[MID-360] point packets=" << packet_number
+                << " latest_points=" << frame.points.size()
+                << " timestamp_ns=" << frame.timestamp.nanoseconds << '\n';
+    }
   }
-  std::cout << "\n";
-}
 
-/// @brief Callback fired when a device is discovered or updated.
-/// Enables streaming on the first discovered device.
-/// @param handle Device handle.
-/// @param info Pointer to LivoxLidarInfo struct containing device info.
-/// @param client_data User data passed to the callback (unused).
-void OnInfoChange(const uint32_t handle, const LivoxLidarInfo* info, void* /*client_data*/) {
-  std::cout << "[Livox] info-change: handle=" << handle;
-  if (info) {
-    std::cout << " dev_type=" << unsigned(info->dev_type);
+  void on_imu_sample(const atlas::imu::ImuSample& sample) override {
+    const auto sample_number = imu_samples_.fetch_add(1) + 1;
+    if (sample_number % 100 == 0) {
+      std::cout << "[MID-360] IMU samples=" << sample_number
+                << " gyro_z_rad_s=" << sample.gyro_z_rad_s
+                << " accel_z_m_s2=" << sample.accel_z_m_s2 << '\n';
+    }
   }
-  std::cout << "\n";
 
-  // Enable streaming once for the first discovered device.
-  uint32_t expected = 0;
-  if (g_first_handle.compare_exchange_strong(expected, handle)) {
-    std::cout << "[Livox] first device discovered (handle=" << handle << ")\n";
-
-    auto st_points = EnableLivoxLidarPointSend(handle, OnAsyncCtrl, nullptr);
-    std::cout << "[Livox] EnableLivoxLidarPointSend -> status=" << int(st_points) << "\n";
-
-    auto st_imu = EnableLivoxLidarImuData(handle, OnAsyncCtrl, nullptr);
-    std::cout << "[Livox] EnableLivoxLidarImuData -> status=" << int(st_imu) << "\n";
-
-    // Optional: choose point cloud data type. Leave commented until you confirm desired enum.
-    // auto st_type = SetLivoxLidarPclDataType(handle, kLivoxLidarPointDataTypeCartesian,
-    // OnAsyncCtrl, nullptr); std::cout << "[Livox] SetLivoxLidarPclDataType -> status=" <<
-    // int(st_type) << "\n";
+  void on_sensor_status(const atlas::sensors::SensorStatus& status) override {
+    std::cout << "[MID-360] status=" << static_cast<int>(status.state)
+              << " handle=" << status.sensor_id;
+    if (!status.serial_number.empty()) {
+      std::cout << " serial=" << status.serial_number;
+    }
+    if (!status.ip_address.empty()) {
+      std::cout << " ip=" << status.ip_address;
+    }
+    std::cout << " message=" << status.message << '\n';
   }
-}
 
-/// @brief IMU data callback invoked when IMU packets arrive.
-/// Prints device handle, device type, data type, and timestamp.
-/// @param handle Device handle.
-/// @param dev_type Device type identifier.
-/// @param data Pointer to LivoxLidarEthernetPacket containing IMU data.
-/// @param client_data User data passed to the callback (unused).
-void OnImu(const uint32_t handle, const uint8_t dev_type, LivoxLidarEthernetPacket* data,
-           void* /*client_data*/) {
-  std::cout << "[Livox] IMU: handle=" << handle << " dev_type=" << unsigned(dev_type);
-  if (data) {
-    std::cout << " data_type=" << unsigned(data->data_type) << " ts=" << data->timestamp;
-  }
-  std::cout << "\n";
-}
+ private:
+  std::atomic_uint64_t point_packets_{0};
+  std::atomic_uint64_t imu_samples_{0};
+};
 
 }  // namespace
 
-/// @brief Main entry point of the Livox LiDAR probe application.
-///
-/// Usage:
-///   ./atlas_livox_probe [config_json_path]
-///
-/// If a config JSON path is provided as the first argument, it is passed to the SDK initialization.
-/// The application installs signal handlers to gracefully exit on Ctrl+C (SIGINT).
-/// It then waits in a loop, printing device info and data callbacks, until terminated.
-///
-/// @param argc Argument count.
-/// @param argv Argument vector.
-/// @return Exit code (0 on success, 1 on failure).
 int main(int argc, char** argv) {
-  std::signal(SIGINT, OnSignal);
+  std::signal(SIGINT, on_signal);
 
-  // If your SDK requires a config JSON, pass it as argv[1].
-  // Example:
-  //   ./atlas_livox_probe ../../config/mid360_config.json
-  const char* config_path = (argc >= 2) ? argv[1] : nullptr;
+  atlas::sensors::SensorDataBus data_bus;
+  auto console = std::make_shared<ConsoleSink>();
+  const auto subscription = data_bus.subscribe(console);
 
-  if (!LivoxLidarSdkInit(config_path)) {
-    std::cerr << "[Livox] LivoxLidarSdkInit failed";
-    if (config_path) {
-      std::cerr << " (config_path='" << config_path << "')";
-    }
-    std::cerr << "\n";
-    // Initialization failed, exit.
+#ifdef ATLAS_HAS_UI_STREAM
+  auto ui_stream = std::make_shared<atlas::ui::UiStreamServer>();
+  if (!ui_stream->start()) {
+    std::cerr << "[ATLAS UI] stream unavailable: " << ui_stream->last_error() << '\n';
+  } else {
+    std::cout << "[ATLAS UI] point stream listening on TCP 47777 (_atlas._tcp)\n";
+  }
+  const auto ui_subscription = data_bus.subscribe(ui_stream);
+#endif
+
+  atlas::livox::LivoxSourceConfig config;
+  if (argc >= 2) {
+    config.config_path = argv[1];
+  }
+
+  atlas::livox::LivoxSource source(data_bus, std::move(config));
+  if (!source.start()) {
+    std::cerr << "[MID-360] start failed: " << source.last_error() << '\n';
     return 1;
   }
 
-  SetLivoxLidarInfoCallback(OnInfo, nullptr);
-  SetLivoxLidarInfoChangeCallback(OnInfoChange, nullptr);
-  SetLivoxLidarImuDataCallback(OnImu, nullptr);
-
-  std::cout << "[Livox] SDK initialized. Waiting for device... (Ctrl+C to exit)\n";
-
-  while (g_running) {
+  std::cout << "[MID-360] source initialized; waiting for data (Ctrl+C to exit)\n";
+  while (g_running.load()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
 
-  std::cout << "[Livox] shutting down...\n";
-  LivoxLidarSdkUninit();
+  source.stop();
+  const auto stats = source.stats();
+  std::cout << "[MID-360] stopped: point_packets=" << stats.point_packets
+            << " points=" << stats.points << " imu_samples=" << stats.imu_samples
+            << " rejected_packets=" << stats.rejected_packets << '\n';
+#ifdef ATLAS_HAS_UI_STREAM
+  data_bus.unsubscribe(ui_subscription);
+  ui_stream->stop();
+  const auto ui_stats = ui_stream->stats();
+  std::cout << "[ATLAS UI] frames_sent=" << ui_stats.frames_sent
+            << " points_sent=" << ui_stats.points_sent
+            << " dropped_points=" << ui_stats.dropped_points << '\n';
+#endif
+  data_bus.unsubscribe(subscription);
   return 0;
 }
