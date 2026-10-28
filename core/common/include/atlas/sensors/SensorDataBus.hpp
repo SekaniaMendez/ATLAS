@@ -20,8 +20,10 @@ class SensorDataBus {
   void unsubscribe(SubscriptionId subscription_id);
 
   void publish(const LidarFrame& frame) const noexcept;
+  void publish(const CameraFrame& frame) const noexcept;
   void publish(const atlas::imu::ImuSample& sample) const noexcept;
   void publish(const SensorStatus& status) const noexcept;
+  void publish(const SensorWarning& warning) const noexcept;
 
  private:
   class Impl;

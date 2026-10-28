@@ -1,17 +1,12 @@
 #pragma once
 
+#include <atlas/livox/livox_source_config.hpp>
 #include <atlas/sensors/SensorDataBus.hpp>
 #include <cstdint>
 #include <memory>
 #include <string>
 
 namespace atlas::livox {
-
-struct LivoxSourceConfig {
-  std::string config_path;
-  bool enable_point_cloud = true;
-  bool enable_imu = true;
-};
 
 struct LivoxSourceStats {
   uint64_t point_packets = 0;

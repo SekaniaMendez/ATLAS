@@ -17,6 +17,7 @@
 		B10000000000000000000001 /* DeviceCalibration.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* DeviceCalibration.swift */; };
 		B10000000000000000000002 /* iphone-mid360-calibrations.json in Resources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* iphone-mid360-calibrations.json */; };
 		C10000000000000000000001 /* CameraSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* CameraSessionController.swift */; };
+		C10000000000000000000002 /* CameraCaptureRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* CameraCaptureRecorder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
 		B20000000000000000000001 /* DeviceCalibration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCalibration.swift; sourceTree = "<group>"; };
 		B20000000000000000000002 /* iphone-mid360-calibrations.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "iphone-mid360-calibrations.json"; sourceTree = "<group>"; };
 		C20000000000000000000001 /* CameraSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraSessionController.swift; sourceTree = "<group>"; };
+		C20000000000000000000002 /* CameraCaptureRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureRecorder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -123,6 +125,7 @@
 			isa = PBXGroup;
 			children = (
 				C20000000000000000000001 /* CameraSessionController.swift */,
+				C20000000000000000000002 /* CameraCaptureRecorder.swift */,
 			);
 			path = Camera;
 			sourceTree = "<group>";
@@ -205,6 +208,7 @@
 				A10000000000000000000007 /* PointCloudRenderer.swift in Sources */,
 				B10000000000000000000001 /* DeviceCalibration.swift in Sources */,
 				C10000000000000000000001 /* CameraSessionController.swift in Sources */,
+				C10000000000000000000002 /* CameraCaptureRecorder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

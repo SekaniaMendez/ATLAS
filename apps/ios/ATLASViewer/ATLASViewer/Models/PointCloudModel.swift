@@ -5,39 +5,53 @@ struct PointCloudSnapshot {
     let pointCount: Int
     let sequence: UInt32
     let timestampNanoseconds: UInt64
+    let isWorldFrame: Bool
 }
 
 final class PointCloudModel: ObservableObject, @unchecked Sendable {
     @Published private(set) var pointCount = 0
     @Published private(set) var sequence: UInt32 = 0
+    @Published private(set) var isWorldFrame = false
 
     private let lock = NSLock()
     private var latestData = Data()
     private var latestTimestamp: UInt64 = 0
     private var latestSequence: UInt32 = 0
+    private var latestWorldFrame = false
+    private var hasSnapshot = false
 
-    func update(data: Data, pointCount: Int, sequence: UInt32, timestampNanoseconds: UInt64) {
+    func update(
+        data: Data,
+        pointCount: Int,
+        sequence: UInt32,
+        timestampNanoseconds: UInt64,
+        isWorldFrame: Bool = false
+    ) {
         lock.lock()
         latestData = data
         latestTimestamp = timestampNanoseconds
         latestSequence = sequence
+        latestWorldFrame = isWorldFrame
+        hasSnapshot = true
         lock.unlock()
 
         DispatchQueue.main.async { [weak self] in
             self?.pointCount = pointCount
             self?.sequence = sequence
+            self?.isWorldFrame = isWorldFrame
         }
     }
 
     func snapshot(after previousSequence: UInt32) -> PointCloudSnapshot? {
         lock.lock()
         defer { lock.unlock() }
-        guard latestSequence != previousSequence, !latestData.isEmpty else { return nil }
+        guard hasSnapshot, latestSequence != previousSequence else { return nil }
         return PointCloudSnapshot(
             data: latestData,
             pointCount: latestData.count / AtlasWireProtocol.pointSize,
             sequence: latestSequence,
-            timestampNanoseconds: latestTimestamp
+            timestampNanoseconds: latestTimestamp,
+            isWorldFrame: latestWorldFrame
         )
     }
 

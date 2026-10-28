@@ -64,6 +64,12 @@ void SensorDataBus::publish(const LidarFrame& frame) const noexcept {
   }
 }
 
+void SensorDataBus::publish(const CameraFrame& frame) const noexcept {
+  for (const auto& sink : impl_->snapshot()) {
+    try { sink->on_camera_frame(frame); } catch (...) {}
+  }
+}
+
 void SensorDataBus::publish(const atlas::imu::ImuSample& sample) const noexcept {
   for (const auto& sink : impl_->snapshot()) {
     try {
@@ -77,6 +83,15 @@ void SensorDataBus::publish(const SensorStatus& status) const noexcept {
   for (const auto& sink : impl_->snapshot()) {
     try {
       sink->on_sensor_status(status);
+    } catch (...) {
+    }
+  }
+}
+
+void SensorDataBus::publish(const SensorWarning& warning) const noexcept {
+  for (const auto& sink : impl_->snapshot()) {
+    try {
+      sink->on_sensor_warning(warning);
     } catch (...) {
     }
   }

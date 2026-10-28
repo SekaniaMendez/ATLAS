@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <atlas/ui/UiStreamServer.hpp>
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <mutex>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -67,7 +69,14 @@ void close_socket(const int socket_fd) noexcept {
 
 class UiStreamServer::Impl {
  public:
-  explicit Impl(UiStreamServerConfig config) : config_(std::move(config)) {}
+  explicit Impl(UiStreamServerConfig config) : config_(std::move(config)) {
+    if (config_.max_points_per_frame == 0 || config_.max_pending_points == 0 ||
+        config_.frame_interval.count() <= 0 || config_.send_timeout.count() <= 0 ||
+        !std::isfinite(config_.maximum_distance_m) ||
+        config_.maximum_distance_m <= 0) {
+      throw std::invalid_argument("Invalid UI stream limits");
+    }
+  }
   ~Impl() { stop(); }
 
   [[nodiscard]] bool start() {
@@ -136,6 +145,8 @@ class UiStreamServer::Impl {
         .frames_sent = frames_sent_.load(),
         .points_sent = points_sent_.load(),
         .dropped_points = dropped_points_.load(),
+        .warnings_sent = warnings_sent_.load(),
+        .slam_statuses_sent = slam_statuses_sent_.load(),
         .client_connected = client_connected_.load(),
     };
   }
@@ -146,6 +157,12 @@ class UiStreamServer::Impl {
     }
 
     std::lock_guard lock(pending_mutex_);
+    if (config_.world_frame) {
+      // A map snapshot is complete in itself: concatenating snapshots would
+      // duplicate geometry and display stale maps under network backpressure.
+      pending_points_.clear();
+      pending_timestamp_ns_ = frame.timestamp.nanoseconds;
+    }
     if (pending_points_.empty()) {
       pending_timestamp_ns_ = frame.timestamp.nanoseconds;
     }
@@ -154,7 +171,35 @@ class UiStreamServer::Impl {
     const auto accepted = std::min(available, frame.points.size());
     pending_points_.insert(pending_points_.end(), frame.points.begin(),
                            frame.points.begin() + static_cast<std::ptrdiff_t>(accepted));
+    pending_frame_ = true;
     dropped_points_.fetch_add(frame.points.size() - accepted, std::memory_order_relaxed);
+    pending_cv_.notify_one();
+  }
+
+  void on_sensor_warning(const atlas::sensors::SensorWarning& warning) {
+    if (!running_.load() || !client_connected_.load()) {
+      return;
+    }
+
+    const auto sequence = next_sequence_.fetch_add(1, std::memory_order_relaxed);
+    auto message = wire::encode_sensor_warning(warning, sequence);
+    {
+      std::lock_guard lock(pending_mutex_);
+      if (pending_warning_messages_.size() == kMaximumPendingWarnings) {
+        pending_warning_messages_.erase(pending_warning_messages_.begin());
+      }
+      pending_warning_messages_.push_back(std::move(message));
+    }
+    pending_cv_.notify_one();
+  }
+
+  void publish_slam_status(const wire::SlamStatus& status) {
+    if (!config_.world_frame || !running_.load() || !client_connected_.load()) return;
+    auto message = wire::encode_slam_status(status, next_sequence_.fetch_add(1, std::memory_order_relaxed));
+    {
+      std::lock_guard lock(pending_mutex_);
+      pending_slam_status_.swap(message);
+    }
     pending_cv_.notify_one();
   }
 
@@ -187,12 +232,21 @@ class UiStreamServer::Impl {
       int no_sigpipe = 1;
       ::setsockopt(accepted, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
 #endif
+      timeval send_timeout{};
+      send_timeout.tv_sec = static_cast<time_t>(config_.send_timeout.count() / 1000);
+      send_timeout.tv_usec = static_cast<suseconds_t>((config_.send_timeout.count() % 1000) * 1000);
+      if (::setsockopt(accepted, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout)) != 0) {
+        close_socket(accepted);
+        set_error("Could not set TCP send timeout");
+        continue;
+      }
       {
         std::lock_guard lock(client_mutex_);
+        client_connected_.store(false);
         close_socket(std::exchange(client_fd_, accepted));
+        clear_pending();
         client_connected_.store(true);
       }
-      clear_pending();
     }
   }
 
@@ -200,39 +254,50 @@ class UiStreamServer::Impl {
     auto next_frame = std::chrono::steady_clock::now() + config_.frame_interval;
     while (running_.load()) {
       std::vector<atlas::sensors::LidarPoint> points;
+      std::vector<std::vector<std::byte>> warning_messages;
+      std::vector<std::byte> slam_status;
       uint64_t timestamp_ns = 0;
+      bool has_frame = false;
       {
         std::unique_lock lock(pending_mutex_);
-        pending_cv_.wait_until(lock, next_frame, [this] { return !running_.load(); });
+        pending_cv_.wait_until(lock, next_frame, [this] {
+          return !running_.load() || !pending_warning_messages_.empty() || !pending_slam_status_.empty();
+        });
         if (!running_.load()) {
           break;
         }
-        points.swap(pending_points_);
-        timestamp_ns = std::exchange(pending_timestamp_ns_, 0);
+        warning_messages.swap(pending_warning_messages_);
+        slam_status.swap(pending_slam_status_);
+        if (std::chrono::steady_clock::now() >= next_frame) {
+          points.swap(pending_points_);
+          timestamp_ns = std::exchange(pending_timestamp_ns_, 0);
+          has_frame = std::exchange(pending_frame_, false);
+          next_frame = std::chrono::steady_clock::now() + config_.frame_interval;
+        }
       }
-      next_frame = std::chrono::steady_clock::now() + config_.frame_interval;
 
-      if (points.empty() || !client_connected_.load()) {
+      if (!slam_status.empty() && send_message(slam_status))
+        slam_statuses_sent_.fetch_add(1, std::memory_order_relaxed);
+
+      for (const auto& message : warning_messages) {
+        if (send_message(message)) {
+          warnings_sent_.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+
+      if (!has_frame || !client_connected_.load()) {
         continue;
       }
       auto visual_points = select_visual_points(points);
-      if (visual_points.empty()) {
+      if (visual_points.empty() && !config_.world_frame) {
         continue;
       }
 
       const auto sequence = next_sequence_.fetch_add(1, std::memory_order_relaxed);
-      const auto message = wire::encode_point_cloud(visual_points, sequence, timestamp_ns);
-      bool sent = false;
-      {
-        std::lock_guard lock(client_mutex_);
-        if (client_fd_ != kNoSocket) {
-          sent = send_all(client_fd_, message);
-          if (!sent) {
-            close_socket(std::exchange(client_fd_, kNoSocket));
-            client_connected_.store(false);
-          }
-        }
-      }
+      const auto message = wire::encode_point_cloud(
+          visual_points, sequence, timestamp_ns,
+          config_.world_frame ? wire::kPointCloudWorldFrame : 0);
+      const bool sent = send_message(message);
       if (sent) {
         frames_sent_.fetch_add(1, std::memory_order_relaxed);
         points_sent_.fetch_add(visual_points.size(), std::memory_order_relaxed);
@@ -240,15 +305,35 @@ class UiStreamServer::Impl {
     }
   }
 
+  [[nodiscard]] bool send_message(const std::span<const std::byte> message) noexcept {
+    std::lock_guard lock(client_mutex_);
+    if (client_fd_ == kNoSocket) {
+      return false;
+    }
+    if (send_all(client_fd_, message)) {
+      return true;
+    }
+    close_socket(std::exchange(client_fd_, kNoSocket));
+    client_connected_.store(false);
+    return false;
+  }
+
   [[nodiscard]] std::vector<atlas::sensors::LidarPoint> select_visual_points(
       const std::vector<atlas::sensors::LidarPoint>& input) {
     std::vector<atlas::sensors::LidarPoint> valid;
     valid.reserve(std::min(input.size(), config_.max_points_per_frame));
     const float maximum_distance_squared = config_.maximum_distance_m * config_.maximum_distance_m;
+    const auto visible = [&](const atlas::sensors::LidarPoint& point) {
+      // World coordinates may be far from the original sensor origin; a raw
+      // sensor-distance gate would silently erase valid parts of the map.
+      return config_.world_frame
+          ? std::isfinite(point.x_m) && std::isfinite(point.y_m) && std::isfinite(point.z_m)
+          : is_visual_point(point, maximum_distance_squared);
+    };
 
     size_t valid_count = 0;
     for (const auto& point : input) {
-      if (is_visual_point(point, maximum_distance_squared)) {
+      if (visible(point)) {
         ++valid_count;
       }
     }
@@ -256,7 +341,7 @@ class UiStreamServer::Impl {
         1, (valid_count + config_.max_points_per_frame - 1) / config_.max_points_per_frame);
     size_t valid_index = 0;
     for (const auto& point : input) {
-      if (!is_visual_point(point, maximum_distance_squared)) {
+      if (!visible(point)) {
         continue;
       }
       if (valid_index % stride == 0 && valid.size() < config_.max_points_per_frame) {
@@ -272,7 +357,10 @@ class UiStreamServer::Impl {
     std::lock_guard lock(pending_mutex_);
     dropped_points_.fetch_add(pending_points_.size(), std::memory_order_relaxed);
     pending_points_.clear();
+    pending_warning_messages_.clear();
+    pending_slam_status_.clear();
     pending_timestamp_ns_ = 0;
+    pending_frame_ = false;
   }
 
   void register_bonjour() noexcept {
@@ -309,11 +397,16 @@ class UiStreamServer::Impl {
   std::mutex pending_mutex_;
   std::condition_variable pending_cv_;
   std::vector<atlas::sensors::LidarPoint> pending_points_;
+  std::vector<std::vector<std::byte>> pending_warning_messages_;
+  std::vector<std::byte> pending_slam_status_;
   uint64_t pending_timestamp_ns_ = 0;
+  bool pending_frame_ = false;
   std::atomic_uint32_t next_sequence_{1};
   std::atomic_uint64_t frames_sent_{0};
   std::atomic_uint64_t points_sent_{0};
   std::atomic_uint64_t dropped_points_{0};
+  std::atomic_uint64_t warnings_sent_{0};
+  std::atomic_uint64_t slam_statuses_sent_{0};
   mutable std::mutex error_mutex_;
   std::string last_error_;
 #ifdef __APPLE__
@@ -332,6 +425,12 @@ std::string UiStreamServer::last_error() const { return impl_->last_error(); }
 UiStreamServerStats UiStreamServer::stats() const noexcept { return impl_->stats(); }
 void UiStreamServer::on_lidar_frame(const atlas::sensors::LidarFrame& frame) {
   impl_->on_lidar_frame(frame);
+}
+void UiStreamServer::on_sensor_warning(const atlas::sensors::SensorWarning& warning) {
+  impl_->on_sensor_warning(warning);
+}
+void UiStreamServer::publish_slam_status(const wire::SlamStatus& status) {
+  impl_->publish_slam_status(status);
 }
 
 }  // namespace atlas::ui

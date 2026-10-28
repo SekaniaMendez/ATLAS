@@ -4,6 +4,8 @@ import Network
 final class AtlasConnection: ObservableObject {
     @Published private(set) var statusText = "Modo demo"
     @Published private(set) var isConnected = false
+    @Published private(set) var activeWarning: AtlasSensorWarning?
+    @Published private(set) var slamStatus: AtlasSlamStatus?
 
     private let pointCloud: PointCloudModel
     private let networkQueue = DispatchQueue(label: "atlas.viewer.network", qos: .userInitiated)
@@ -16,7 +18,7 @@ final class AtlasConnection: ObservableObject {
     }
 
     func startBrowsing() {
-        disconnectConnectionOnly()
+        disconnectConnectionOnly(clearSlamStatus: true)
         browser?.cancel()
         updateStatus("Buscando ATLAS en la red…", connected: false)
 
@@ -45,12 +47,12 @@ final class AtlasConnection: ObservableObject {
     func disconnect() {
         browser?.cancel()
         browser = nil
-        disconnectConnectionOnly()
+        disconnectConnectionOnly(clearSlamStatus: true)
         updateStatus("Desconectado", connected: false)
     }
 
     private func connect(endpoint: NWEndpoint, label: String) {
-        disconnectConnectionOnly()
+        disconnectConnectionOnly(clearSlamStatus: true)
         let connection = NWConnection(to: endpoint, using: .tcp)
         self.connection = connection
         updateStatus("Conectando a \(label)…", connected: false)
@@ -65,7 +67,7 @@ final class AtlasConnection: ObservableObject {
                 self.updateStatus("Esperando red: \(error.localizedDescription)", connected: false)
             case let .failed(error):
                 self.updateStatus("Conexión falló: \(error.localizedDescription)", connected: false)
-                self.disconnectConnectionOnly()
+                self.disconnectConnectionOnly(clearSlamStatus: false)
             case .cancelled:
                 self.updateStatus("Desconectado", connected: false)
             default:
@@ -85,12 +87,12 @@ final class AtlasConnection: ObservableObject {
             }
             if let error {
                 self.updateStatus("Recepción falló: \(error.localizedDescription)", connected: false)
-                self.disconnectConnectionOnly()
+                self.disconnectConnectionOnly(clearSlamStatus: false)
                 return
             }
             if complete {
                 self.updateStatus("La Mac cerró la conexión", connected: false)
-                self.disconnectConnectionOnly()
+                self.disconnectConnectionOnly(clearSlamStatus: false)
                 return
             }
             self.receiveNext(on: connection)
@@ -119,16 +121,38 @@ final class AtlasConnection: ObservableObject {
                     data: payload,
                     pointCount: header.elementCount,
                     sequence: header.sequence,
-                    timestampNanoseconds: header.timestampNanoseconds
+                    timestampNanoseconds: header.timestampNanoseconds,
+                    isWorldFrame: header.flags & AtlasWireProtocol.pointCloudWorldFrame != 0
                 )
+            } else if header.type == .sensorWarning,
+                      let warning = AtlasWireProtocol.decodeSensorWarning(payload, header: header) {
+                publishWarning(warning)
+            } else if let status = AtlasWireProtocol.decodeSlamStatus(payload, header: header) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.slamStatus = status
+                }
             }
         }
     }
 
-    private func disconnectConnectionOnly() {
+    private func disconnectConnectionOnly(clearSlamStatus: Bool) {
         connection?.cancel()
         connection = nil
         receiveBuffer.removeAll(keepingCapacity: true)
+        DispatchQueue.main.async { [weak self] in
+            self?.activeWarning = nil
+            if clearSlamStatus { self?.slamStatus = nil }
+        }
+    }
+
+    private func publishWarning(_ warning: AtlasSensorWarning) {
+        DispatchQueue.main.async { [weak self] in
+            self?.activeWarning = warning
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard self?.activeWarning?.sequence == warning.sequence else { return }
+            self?.activeWarning = nil
+        }
     }
 
     private func updateStatus(_ text: String, connected: Bool) {

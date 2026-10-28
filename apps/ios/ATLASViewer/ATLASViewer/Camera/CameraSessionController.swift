@@ -43,6 +43,7 @@ final class CameraSessionController: NSObject, ObservableObject, ARSessionDelega
     @Published private(set) var activeLensName = "1×"
 
     let session = ARSession()
+    let captureRecorder = CameraCaptureRecorder()
 
     private let stateLock = NSLock()
     private var requestedRunning = false
@@ -60,6 +61,7 @@ final class CameraSessionController: NSObject, ObservableObject, ARSessionDelega
     }
 
     func start() {
+        captureRecorder.stop()
         guard ARWorldTrackingConfiguration.isSupported else {
             setRequestedRunning(false)
             publish(running: false, status: "ARKit no disponible en este dispositivo")
@@ -95,6 +97,7 @@ final class CameraSessionController: NSObject, ObservableObject, ARSessionDelega
     }
 
     func pause() {
+        captureRecorder.stop()
         setRequestedRunning(false)
         session.pause()
         publish(running: false, status: "Cámara detenida")
@@ -139,23 +142,31 @@ final class CameraSessionController: NSObject, ObservableObject, ARSessionDelega
     }
 
     func session(_ session: ARSession, didFailWithError error: Error) {
+        DispatchQueue.main.async { [weak self] in self?.captureRecorder.stop() }
         setRequestedRunning(false)
         publish(running: false, status: "Error de cámara: \(error.localizedDescription)")
     }
 
     func sessionWasInterrupted(_ session: ARSession) {
+        DispatchQueue.main.async { [weak self] in self?.captureRecorder.stop() }
         publish(running: shouldRenderCamera, status: "Cámara interrumpida")
     }
 
     func sessionInterruptionEnded(_ session: ARSession) {
-        guard shouldRenderCamera else { return }
-        start()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.shouldRenderCamera else { return }
+            self.start()
+        }
     }
 
     private func setRequestedRunning(_ value: Bool) {
         stateLock.lock()
         requestedRunning = value
         stateLock.unlock()
+    }
+
+    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        captureRecorder.submit(frame)
     }
 
     private func publish(running: Bool, status: String) {

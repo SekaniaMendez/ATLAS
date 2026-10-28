@@ -152,6 +152,42 @@ ATLAS/
 
 ---
 
+## C++ configuration convention
+
+Keep configuration structs and tunable defaults in a separate
+`<name>_config.hpp` header (snake_case), next to the module's public headers.
+Implementation-only configuration belongs in `src/<name>_config.hpp`.
+Component headers include their configuration header to preserve existing usage.
+New configuration fields and defaults must follow this convention.
+
+- Preprocessing thresholds, including the minimum LiDAR distance in meters:
+  [`sensor_preprocessor_config.hpp`](core/preprocessing/include/atlas/preprocessing/sensor_preprocessor_config.hpp).
+- Internal IMU monitor defaults:
+  [`imu_motion_monitor_config.hpp`](core/preprocessing/src/imu_motion_monitor_config.hpp).
+- Livox source options:
+  [`livox_source_config.hpp`](core/sdk-coms/livox/include/atlas/livox/livox_source_config.hpp).
+- Viewer stream port, rate and limits:
+  [`ui_stream_server_config.hpp`](core/ui-coms/atlas-stream/include/atlas/ui/ui_stream_server_config.hpp).
+- Synchronization capacities and tolerances:
+  [`synchronization_config.hpp`](core/timesync/include/atlas/timesync/synchronization_config.hpp).
+- Voxel size, bounds and sample capacity:
+  [`sparse_voxel_map_config.hpp`](core/slam/include/atlas/slam/sparse_voxel_map_config.hpp).
+- Storage memory defaults:
+  [`capture_config.hpp`](core/storage/include/atlas/storage/capture_config.hpp),
+  [`paged_voxel_map_config.hpp`](core/storage/include/atlas/storage/paged_voxel_map_config.hpp),
+  [`voxel_map_archive_config.hpp`](core/storage/include/atlas/storage/voxel_map_archive_config.hpp).
+- Local SLAM, registration and app defaults:
+  [`voxel_slam_config.hpp`](core/slam/include/atlas/slam/voxel_slam_config.hpp),
+  [`voxel_registration_config.hpp`](core/slam/include/atlas/slam/voxel_registration_config.hpp),
+  [`slam_app_config.hpp`](apps/common/slam_app_config.hpp).
+
+Distances use meters (`_m`), squared distances use square meters, and time fields
+state their units or use `std::chrono`. Derived values such as squared distance
+remain implementation state; wire-format constants and physical conversion factors
+remain with their protocols and algorithms. The Livox SDK network configuration
+continues to use `config/livox/mid360.json`; iOS uses its native Swift/JSON configuration.
+Changing a C++ default requires rebuilding the consuming application.
+
 ## Status
 
 - [x] Cross-platform build system (CMake + Ninja)
@@ -159,7 +195,11 @@ ATLAS/
 - [x] Hardware communication probe (device discovery / IMU enable)
 - [x] MID-360 point/IMU decoding and sensor data bus
 - [x] Live Mac-to-iPhone point stream and Metal viewer
-- [ ] LiDAR–Inertial SLAM core
+- [x] Local voxel-hash mapping prototype with gyro-assisted odometry and per-point
+  motion compensation ([build, live use, replay and limits](docs/SLAM_PROTOTYPE.md))
+- [ ] Full LiDAR–inertial estimator, loop closure and global relocalization
+- [x] Sensor-independent sparse voxel canvas ([API and validation](docs/SPARSE_VOXEL_MAP.md))
+- [x] Raw capture/replay, paged map storage and temporal synchronization ([usage and limits](docs/CAPTURE_AND_SYNCHRONIZATION.md))
 - [ ] GNSS fusion & georeferencing
 - [ ] AI perception modules
 - [x] Initial real-time visualization pipeline

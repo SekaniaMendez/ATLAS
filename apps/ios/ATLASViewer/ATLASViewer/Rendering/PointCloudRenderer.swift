@@ -42,6 +42,7 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
     private var yaw: Float = 0
     private var pitch: Float = -0.15
     private var distance: Float = 7
+    private var isWorldFrame = false
     private let cameraLock = NSLock()
 
     init?(
@@ -280,7 +281,7 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
     """
 
     func orbit(deltaX: Float, deltaY: Float) {
-        guard !camera.shouldRenderCamera else { return }
+        guard !shouldRenderCamera else { return }
         cameraLock.lock()
         yaw -= deltaX * 0.006
         pitch = min(1.35, max(-1.35, pitch - deltaY * 0.006))
@@ -288,13 +289,22 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
     }
 
     func zoom(scale: Float) {
-        guard scale > 0, !camera.shouldRenderCamera else { return }
+        guard scale > 0, !shouldRenderCamera else { return }
         cameraLock.lock()
         distance = min(30, max(1.2, distance / scale))
         cameraLock.unlock()
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
+
+    private var shouldRenderCamera: Bool {
+        cameraLock.lock()
+        let worldFrame = isWorldFrame
+        cameraLock.unlock()
+        // A fixed map cannot use the live LiDAR-to-camera extrinsic alone.
+        // A world-to-camera pose would be required for a valid AR overlay.
+        return !worldFrame && camera.shouldRenderCamera
+    }
 
     func draw(in view: MTKView) {
         updatePointBuffer(device: view.device)
@@ -304,7 +314,7 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
         else { return }
 
         var renderedCamera = false
-        if camera.shouldRenderCamera, let frame = camera.session.currentFrame {
+        if shouldRenderCamera, let frame = camera.session.currentFrame {
             renderedCamera = encodeCamera(frame: frame, in: view, pass: pass, commandBuffer: commandBuffer)
         }
         if !renderedCamera {
@@ -398,10 +408,12 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
         pass: MTLRenderPassDescriptor,
         commandBuffer: MTLCommandBuffer
     ) {
-        guard pointCount > 0,
-              let pointBuffer,
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
+        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
         else { return }
+        guard pointCount > 0, let pointBuffer else {
+            encoder.endEncoding()
+            return
+        }
 
         let aspect = Float(view.drawableSize.width / max(1, view.drawableSize.height))
         var uniforms = ViewerUniforms(
@@ -509,6 +521,9 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
         guard let device, let snapshot = model.snapshot(after: loadedSequence) else { return }
         loadedSequence = snapshot.sequence
         pointCount = snapshot.pointCount
+        cameraLock.lock()
+        isWorldFrame = snapshot.isWorldFrame
+        cameraLock.unlock()
         pointBuffer = snapshot.data.withUnsafeBytes { bytes in
             guard let baseAddress = bytes.baseAddress else { return nil }
             return device.makeBuffer(bytes: baseAddress, length: bytes.count, options: .storageModeShared)

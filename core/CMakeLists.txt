@@ -4,6 +4,17 @@ add_library(atlas_core STATIC)
 set(ATLAS_CORE_SOURCES
   common/src/atlas_dummy.cpp
   common/src/SensorDataBus.cpp
+  preprocessing/src/ImuMotionMonitor.cpp
+  preprocessing/src/LiDARFilter.cpp
+  preprocessing/src/SensorPreprocessor.cpp
+  slam/src/SparseVoxelMap.cpp
+  slam/src/VoxelRegistration.cpp
+  slam/src/VoxelSlamEngine.cpp
+  storage/src/Capture.cpp
+  storage/src/CaptureCodec.cpp
+  storage/src/VoxelMapArchive.cpp
+  storage/src/PagedVoxelMap.cpp
+  timesync/src/SynchronizationOrchestrator.cpp
 )
 
 # GNSS (core) sources (add files here as you create them)
@@ -22,10 +33,23 @@ target_include_directories(atlas_core
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/common/include
     ${CMAKE_CURRENT_SOURCE_DIR}/imu/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/preprocessing/include
     ${CMAKE_CURRENT_SOURCE_DIR}/gnss/include
     ${CMAKE_CURRENT_SOURCE_DIR}/timesync/include
     ${CMAKE_CURRENT_SOURCE_DIR}/slam/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/storage/include
 )
+
+find_package(Threads REQUIRED)
+include(${PROJECT_SOURCE_DIR}/cmake/AtlasEigen.cmake)
+find_package(SQLite3 REQUIRED)
+target_link_libraries(atlas_core PRIVATE Threads::Threads)
+target_link_libraries(atlas_core PRIVATE Eigen3::Eigen)
+if(TARGET SQLite3::SQLite3)
+  target_link_libraries(atlas_core PRIVATE SQLite3::SQLite3)
+else()
+  target_link_libraries(atlas_core PRIVATE SQLite::SQLite3)
+endif()
 
 target_compile_features(atlas_core PUBLIC cxx_std_20)
 

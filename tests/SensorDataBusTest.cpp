@@ -13,10 +13,12 @@ class CountingSink final : public atlas::sensors::ISensorDataSink {
 
   void on_imu_sample(const atlas::imu::ImuSample& /*sample*/) override { ++imu_samples; }
   void on_sensor_status(const atlas::sensors::SensorStatus& /*status*/) override { ++statuses; }
+  void on_sensor_warning(const atlas::sensors::SensorWarning& /*warning*/) override { ++warnings; }
 
   int lidar_frames = 0;
   int imu_samples = 0;
   int statuses = 0;
+  int warnings = 0;
   size_t last_point_count = 0;
 };
 
@@ -37,10 +39,12 @@ int main() {
   bus.publish(frame);
   bus.publish(atlas::imu::ImuSample{});
   bus.publish(atlas::sensors::SensorStatus{});
+  bus.publish(atlas::sensors::SensorWarning{});
 
   assert(first->lidar_frames == 1);
   assert(first->imu_samples == 1);
   assert(first->statuses == 1);
+  assert(first->warnings == 1);
   assert(first->last_point_count == 2);
   assert(second->lidar_frames == 1);
 

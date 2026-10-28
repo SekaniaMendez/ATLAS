@@ -1,5 +1,16 @@
 # ATLAS applications
 
+add_executable(atlas_slam_demo slam_demo/atlas_slam_demo.cpp)
+target_link_libraries(atlas_slam_demo PRIVATE atlas_core)
+
+add_executable(atlas_capture capture/atlas_capture.cpp)
+if(TARGET atlas_ui_stream)
+  target_link_libraries(atlas_capture PRIVATE atlas_ui_stream)
+  target_compile_definitions(atlas_capture PRIVATE ATLAS_HAS_UI_STREAM=1)
+else()
+  target_link_libraries(atlas_capture PRIVATE atlas_core)
+endif()
+
 # ----------------------------
 # Livox probe
 # ----------------------------

@@ -1,27 +1,20 @@
 #pragma once
 
 #include <atlas/sensors/ISensorDataSink.hpp>
-#include <chrono>
-#include <cstddef>
+#include <atlas/ui/ui_stream_server_config.hpp>
+#include <atlas/ui/WireProtocol.hpp>
 #include <cstdint>
 #include <memory>
 #include <string>
 
 namespace atlas::ui {
 
-struct UiStreamServerConfig {
-  uint16_t port = 47777;
-  std::string service_name = "ATLAS";
-  std::chrono::milliseconds frame_interval{50};
-  size_t max_points_per_frame = 10'000;
-  size_t max_pending_points = 40'000;
-  float maximum_distance_m = 50.0F;
-};
-
 struct UiStreamServerStats {
   uint64_t frames_sent = 0;
   uint64_t points_sent = 0;
   uint64_t dropped_points = 0;
+  uint64_t warnings_sent = 0;
+  uint64_t slam_statuses_sent = 0;
   bool client_connected = false;
 };
 
@@ -40,6 +33,8 @@ class UiStreamServer final : public atlas::sensors::ISensorDataSink {
   [[nodiscard]] UiStreamServerStats stats() const noexcept;
 
   void on_lidar_frame(const atlas::sensors::LidarFrame& frame) override;
+  void on_sensor_warning(const atlas::sensors::SensorWarning& warning) override;
+  void publish_slam_status(const wire::SlamStatus& status);
 
  private:
   class Impl;
