@@ -75,6 +75,8 @@ const auto changes = map.take_changes();
 | `find_block` / `blocks` | Acceso de solo lectura a bloques y celdas; el orden de la tabla hash no es estable. |
 | `neighbors(key, radius)` | Celdas observadas en orden z/y/x; incluye el centro si existe. Radio permitido: 0–8. No es una consulta k-NN ni un radio métrico exacto. |
 | `reserve_blocks(n)` | Reserva capacidad del índice hash; no crea bloques ni reserva todo el levantamiento. |
+| `erase(key)` | Devuelve una celda a desconocido, libera su bloque si queda vacío y notifica el cambio. Borrar una celda ausente no cambia revisiones. |
+| `erase_samples(key, predicate)` | Retira solo las muestras seleccionadas; conserva las otras superficies que compartan celda. Tras borrado parcial, el contador de esa celda se reinicia al número de muestras conservadas. |
 | `clear()` | Borra geometría y conteos de observaciones; conserva límites/resolución y emite reinicio. |
 
 Los límites actuales son una caja de captura editable, no un polígono catastral.
@@ -103,12 +105,19 @@ si el llamador lo proporciona; esta fase no conecta ni calibra la cámara.
 ## Notificaciones para IA, visualización u otros consumidores
 
 Cada inserción aceptada incrementa la revisión global y la del bloque afectado.
+El borrado selectivo también incrementa revisiones. `accepted_hit_count()` es la
+suma de observaciones aún representadas por las celdas retenidas, no un contador
+histórico de entrada: disminuye al retirar evidencia. Los archivos guardados
+conservan estos conteos y no resucitan celdas borradas al recargarse.
 Una modificación de límites incrementa la revisión global y activa una señal de
 metadata. Las inserciones rechazadas no cambian geometría ni revisiones.
 
 `take_changes()` devuelve una sola entrada por bloque pendiente, con su revisión
 más reciente, y consume la cola. Un nuevo cambio en ese bloque lo vuelve a encolar.
 El orden es el de la primera modificación pendiente, no el orden espacial.
+Si se libera un bloque, su entrada tiene `removed=true`: el consumidor debe
+retirarlo de su caché. Borrar y recrear el mismo bloque antes de consumir cambios
+produce una sola entrada con su estado final y revisión más reciente.
 No hay umbral geométrico de relevancia en esta fase: cualquier observación aceptada
 marca cambios; el planificador de IA podrá agruparlos o filtrarlos posteriormente.
 
@@ -121,8 +130,9 @@ La cola tiene **un consumidor**. Para varios módulos, un coordinador consume y
 distribuye el mismo lote. El lote contiene identificadores y revisiones, no una
 copia de geometría. Todo acceso al mapa requiere sincronización externa; para IA
 asíncrona, el coordinador debe copiar las regiones necesarias bajo esa sincronización.
-Los punteros a voxels sobreviven inserciones/rehash, pero quedan invalidados por
-limpieza, destrucción o reemplazo del mapa. El contenido de las muestras puede cambiar.
+Los punteros a voxels sobreviven inserciones/rehash, pero quedan invalidados al
+liberar su bloque, limpiar, destruir o reemplazar el mapa. El contenido de las
+muestras puede cambiar.
 
 ## Verificación reproducible
 
@@ -160,9 +170,12 @@ no con la primera implementación hasheada por voxel.
 
 ## Alcance restante
 
-Esta entrega completa el contenedor de la fase 1. No está conectado al flujo de
-captura existente. El total de bloques aún puede crecer: presupuesto global de RAM,
-descarga a disco, grabación/reproducción y persistencia corresponden a la fase 2.
+El contenedor de la fase 1 está conectado al flujo de captura mediante
+`VoxelSlamEngine`. El lienzo admite ahora borrado selectivo; `TemporalCanvas`
+aporta confirmación temporal y retirada por contradicciones de visibilidad,
+descritas en [el prototipo SLAM](SLAM_PROTOTYPE.md). El contenedor por sí solo no
+clasifica cuerpos ni decide qué borrar. El total de bloques aún puede crecer:
+los límites de sesión pertenecen al motor.
 La [fase 2](CAPTURE_AND_SYNCHRONIZATION.md) añade persistencia y una caché separada
 `PagedVoxelMap`; `SparseVoxelMap` sigue siendo el contenedor en memoria sin expulsión.
 La procedencia de capturas, submapas corregibles, superficies, SLAM y exportación

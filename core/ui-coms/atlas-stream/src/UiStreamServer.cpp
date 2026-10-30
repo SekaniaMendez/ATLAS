@@ -6,6 +6,9 @@
 
 #include <atlas/ui/UiStreamServer.hpp>
 #include <atlas/ui/WireProtocol.hpp>
+#include <atlas/ui/GeometryWireProtocol.hpp>
+#include "CameraReceiver.hpp"
+#include "LiveGeometryWorker.hpp"
 
 #ifdef __APPLE__
 #include <dns_sd.h>
@@ -69,7 +72,20 @@ void close_socket(const int socket_fd) noexcept {
 
 class UiStreamServer::Impl {
  public:
-  explicit Impl(UiStreamServerConfig config) : config_(std::move(config)) {
+  explicit Impl(UiStreamServerConfig config, CameraHandler handler)
+      : config_(std::move(config)), camera_receiver_(std::move(handler)),
+        geometry_worker_(config_.geometry_interval, [this](auto snapshot, uint64_t revision, float ms) {
+          if (!running_.load() || !client_connected_.load()) return;
+          const auto generation = client_generation_.load();
+          auto message = wire::encode_geometry_snapshot(snapshot,
+              next_sequence_.fetch_add(1, std::memory_order_relaxed), revision, ms);
+          {
+            std::lock_guard lock(pending_mutex_);
+            if (!client_connected_.load() || generation != client_generation_.load()) return;
+            pending_geometry_.swap(message);
+          }
+          pending_cv_.notify_one();
+        }) {
     if (config_.max_points_per_frame == 0 || config_.max_pending_points == 0 ||
         config_.frame_interval.count() <= 0 || config_.send_timeout.count() <= 0 ||
         !std::isfinite(config_.maximum_distance_m) ||
@@ -107,6 +123,7 @@ class UiStreamServer::Impl {
     }
 
     listener_fd_.store(listener);
+    if (config_.world_frame && config_.live_geometry) geometry_worker_.start();
     register_bonjour();
     accept_thread_ = std::thread([this] { accept_loop(); });
     sender_thread_ = std::thread([this] { sender_loop(); });
@@ -119,6 +136,7 @@ class UiStreamServer::Impl {
     }
 
     pending_cv_.notify_all();
+    geometry_worker_.stop();
     close_socket(listener_fd_.exchange(kNoSocket));
     {
       std::lock_guard lock(client_mutex_);
@@ -130,6 +148,7 @@ class UiStreamServer::Impl {
     if (sender_thread_.joinable()) {
       sender_thread_.join();
     }
+    camera_receiver_.stop();
     unregister_bonjour();
   }
 
@@ -147,6 +166,10 @@ class UiStreamServer::Impl {
         .dropped_points = dropped_points_.load(),
         .warnings_sent = warnings_sent_.load(),
         .slam_statuses_sent = slam_statuses_sent_.load(),
+        .geometry_snapshots_sent = geometry_snapshots_sent_.load(),
+        .geometry_errors = geometry_worker_.errors(),
+        .camera_frames_received = camera_receiver_.received(),
+        .camera_frames_rejected = camera_receiver_.rejected(),
         .client_connected = client_connected_.load(),
     };
   }
@@ -155,6 +178,8 @@ class UiStreamServer::Impl {
     if (!running_.load() || !client_connected_.load()) {
       return;
     }
+
+    if (config_.world_frame && config_.live_geometry) geometry_worker_.submit(frame);
 
     std::lock_guard lock(pending_mutex_);
     if (config_.world_frame) {
@@ -195,6 +220,8 @@ class UiStreamServer::Impl {
 
   void publish_slam_status(const wire::SlamStatus& status) {
     if (!config_.world_frame || !running_.load() || !client_connected_.load()) return;
+    if (config_.live_geometry)
+      geometry_worker_.set_tracking(status.state == wire::SlamTrackingState::Tracking && !status.fatal_error);
     auto message = wire::encode_slam_status(status, next_sequence_.fetch_add(1, std::memory_order_relaxed));
     {
       std::lock_guard lock(pending_mutex_);
@@ -240,13 +267,28 @@ class UiStreamServer::Impl {
         set_error("Could not set TCP send timeout");
         continue;
       }
+      int camera_fd = -1;
       {
         std::lock_guard lock(client_mutex_);
+        if (!running_.load()) { close_socket(accepted); break; }
         client_connected_.store(false);
         close_socket(std::exchange(client_fd_, accepted));
+        geometry_worker_.reset();
         clear_pending();
-        client_connected_.store(true);
+        // Keep the sender excluded until the provenance is completely sent.
+        // Old viewers know Hello and ignore its payload; new viewers default to
+        // Unknown until this exact, bounded declaration arrives.
+        const auto hello = wire::encode_source_hello(config_.source_kind,
+            next_sequence_.fetch_add(1, std::memory_order_relaxed));
+        if (send_all(accepted, hello)) {
+          client_connected_.store(true);
+          camera_fd = ::dup(accepted);
+        } else {
+          close_socket(std::exchange(client_fd_, kNoSocket));
+          set_error("Could not send source declaration");
+        }
       }
+      camera_receiver_.replace(camera_fd);
     }
   }
 
@@ -256,18 +298,23 @@ class UiStreamServer::Impl {
       std::vector<atlas::sensors::LidarPoint> points;
       std::vector<std::vector<std::byte>> warning_messages;
       std::vector<std::byte> slam_status;
+      std::vector<std::byte> geometry;
+      uint64_t generation = 0;
       uint64_t timestamp_ns = 0;
       bool has_frame = false;
       {
         std::unique_lock lock(pending_mutex_);
         pending_cv_.wait_until(lock, next_frame, [this] {
-          return !running_.load() || !pending_warning_messages_.empty() || !pending_slam_status_.empty();
+          return !running_.load() || !pending_warning_messages_.empty() || !pending_slam_status_.empty() ||
+                 !pending_geometry_.empty();
         });
         if (!running_.load()) {
           break;
         }
         warning_messages.swap(pending_warning_messages_);
         slam_status.swap(pending_slam_status_);
+        geometry.swap(pending_geometry_);
+        generation = client_generation_.load();
         if (std::chrono::steady_clock::now() >= next_frame) {
           points.swap(pending_points_);
           timestamp_ns = std::exchange(pending_timestamp_ns_, 0);
@@ -276,11 +323,14 @@ class UiStreamServer::Impl {
         }
       }
 
-      if (!slam_status.empty() && send_message(slam_status))
+      if (!slam_status.empty() && send_message(slam_status, generation))
         slam_statuses_sent_.fetch_add(1, std::memory_order_relaxed);
 
+      if (!geometry.empty() && send_message(geometry, generation))
+        geometry_snapshots_sent_.fetch_add(1, std::memory_order_relaxed);
+
       for (const auto& message : warning_messages) {
-        if (send_message(message)) {
+        if (send_message(message, generation)) {
           warnings_sent_.fetch_add(1, std::memory_order_relaxed);
         }
       }
@@ -296,8 +346,8 @@ class UiStreamServer::Impl {
       const auto sequence = next_sequence_.fetch_add(1, std::memory_order_relaxed);
       const auto message = wire::encode_point_cloud(
           visual_points, sequence, timestamp_ns,
-          config_.world_frame ? wire::kPointCloudWorldFrame : 0);
-      const bool sent = send_message(message);
+          config_.world_frame ? (wire::kPointCloudWorldFrame | wire::kPointCloudRgb) : 0);
+      const bool sent = send_message(message, generation);
       if (sent) {
         frames_sent_.fetch_add(1, std::memory_order_relaxed);
         points_sent_.fetch_add(visual_points.size(), std::memory_order_relaxed);
@@ -305,9 +355,9 @@ class UiStreamServer::Impl {
     }
   }
 
-  [[nodiscard]] bool send_message(const std::span<const std::byte> message) noexcept {
+  [[nodiscard]] bool send_message(const std::span<const std::byte> message, uint64_t generation) noexcept {
     std::lock_guard lock(client_mutex_);
-    if (client_fd_ == kNoSocket) {
+    if (client_fd_ == kNoSocket || generation != client_generation_.load()) {
       return false;
     }
     if (send_all(client_fd_, message)) {
@@ -355,10 +405,13 @@ class UiStreamServer::Impl {
 
   void clear_pending() {
     std::lock_guard lock(pending_mutex_);
+    // Sender captures this generation under the same lock as pending messages.
+    client_generation_.fetch_add(1);
     dropped_points_.fetch_add(pending_points_.size(), std::memory_order_relaxed);
     pending_points_.clear();
     pending_warning_messages_.clear();
     pending_slam_status_.clear();
+    pending_geometry_.clear();
     pending_timestamp_ns_ = 0;
     pending_frame_ = false;
   }
@@ -387,6 +440,8 @@ class UiStreamServer::Impl {
   }
 
   UiStreamServerConfig config_;
+  CameraReceiver camera_receiver_;
+  LiveGeometryWorker geometry_worker_;
   std::atomic_bool running_{false};
   std::atomic_int listener_fd_{kNoSocket};
   std::thread accept_thread_;
@@ -394,11 +449,13 @@ class UiStreamServer::Impl {
   mutable std::mutex client_mutex_;
   int client_fd_ = kNoSocket;
   std::atomic_bool client_connected_{false};
+  std::atomic_uint64_t client_generation_{0};
   std::mutex pending_mutex_;
   std::condition_variable pending_cv_;
   std::vector<atlas::sensors::LidarPoint> pending_points_;
   std::vector<std::vector<std::byte>> pending_warning_messages_;
   std::vector<std::byte> pending_slam_status_;
+  std::vector<std::byte> pending_geometry_;
   uint64_t pending_timestamp_ns_ = 0;
   bool pending_frame_ = false;
   std::atomic_uint32_t next_sequence_{1};
@@ -407,6 +464,7 @@ class UiStreamServer::Impl {
   std::atomic_uint64_t dropped_points_{0};
   std::atomic_uint64_t warnings_sent_{0};
   std::atomic_uint64_t slam_statuses_sent_{0};
+  std::atomic_uint64_t geometry_snapshots_sent_{0};
   mutable std::mutex error_mutex_;
   std::string last_error_;
 #ifdef __APPLE__
@@ -414,8 +472,8 @@ class UiStreamServer::Impl {
 #endif
 };
 
-UiStreamServer::UiStreamServer(UiStreamServerConfig config)
-    : impl_(std::make_unique<Impl>(std::move(config))) {}
+UiStreamServer::UiStreamServer(UiStreamServerConfig config, CameraHandler handler)
+    : impl_(std::make_unique<Impl>(std::move(config), std::move(handler))) {}
 
 UiStreamServer::~UiStreamServer() = default;
 bool UiStreamServer::start() { return impl_->start(); }

@@ -12,6 +12,8 @@ namespace atlas::preprocessing {
 struct SensorPreprocessorStats {
   uint64_t lidar_points_received = 0;
   uint64_t lidar_points_rejected = 0;
+  /// Subset of rejected points; range/invalid-coordinate rejection takes precedence.
+  uint64_t lidar_points_rejected_by_tag = 0;
   uint64_t imu_samples_received = 0;
   uint64_t warnings_published = 0;
 };

@@ -149,7 +149,7 @@ VoxelInsertResult SparseVoxelMap::insert(const MapPoint& point) {
   auto& voxel = block.voxels[address.local_index];
   // Queue before changing geometry, then roll back if sample allocation fails.
   // Existing blocks preserve content and notifications on allocation failure.
-  const bool queue_change = !block.change_pending;
+  const bool queue_change = !block.change_pending && !removed_blocks_.contains(address.block);
   bool queued = false;
   try {
     if (queue_change) {
@@ -174,7 +174,51 @@ VoxelInsertResult SparseVoxelMap::insert(const MapPoint& point) {
   ++accepted_hit_count_;
   block.revision = ++revision_;
   block.change_pending = true;
+  removed_blocks_.erase(address.block);
   return VoxelInsertResult::Inserted;
+}
+
+void SparseVoxelMap::replace_samples(const VoxelKey& key, std::vector<MapPoint> samples) {
+  const auto address = address_for(key);
+  auto it = blocks_.find(address.block);
+  auto& block = it->second;
+  auto& voxel = block.voxels[address.local_index];
+  require_revision_capacity();
+  const bool remove_block = samples.empty() && block.occupied_voxel_count == 1;
+  if (remove_block) removed_blocks_.emplace(address.block, revision_ + 1);
+  try {
+    if (!block.change_pending) pending_blocks_.push_back(address.block);
+  } catch (...) {
+    if (remove_block) removed_blocks_.erase(address.block);
+    throw;
+  }
+  accepted_hit_count_ -= voxel.hit_count;
+  voxel.samples = std::move(samples);
+  voxel.hit_count = voxel.samples.size();
+  accepted_hit_count_ += voxel.hit_count;
+  if (!voxel.hit_count) { --voxel_count_; --block.occupied_voxel_count; }
+  block.revision = ++revision_;
+  block.change_pending = true;
+  if (remove_block) blocks_.erase(it);
+}
+
+bool SparseVoxelMap::erase(const VoxelKey& key) {
+  if (!find(key)) return false;
+  replace_samples(key, {});
+  return true;
+}
+
+size_t SparseVoxelMap::erase_samples(const VoxelKey& key,
+                                    const std::function<bool(const MapPoint&)>& predicate) {
+  const auto* voxel = find(key);
+  if (!voxel) return 0;
+  std::vector<MapPoint> survivors;
+  survivors.reserve(voxel->samples.size());
+  for (const auto& point : voxel->samples)
+    if (!predicate(point)) survivors.push_back(point);
+  const size_t removed = voxel->samples.size() - survivors.size();
+  if (removed) replace_samples(key, std::move(survivors));
+  return removed;
 }
 
 const VoxelBlock* SparseVoxelMap::find_block(const BlockKey& key) const noexcept {
@@ -217,11 +261,15 @@ MapChanges SparseVoxelMap::take_changes() {
   MapChanges result{revision_, reset_pending_, bounds_changed_pending_, {}};
   result.blocks.reserve(pending_blocks_.size());
   for (const auto& key : pending_blocks_) {
-    auto& block = blocks_.at(key);
-    result.blocks.push_back({key, block.revision});
-    block.change_pending = false;
+    const auto it = blocks_.find(key);
+    if (it == blocks_.end()) result.blocks.push_back({key, removed_blocks_.at(key), true});
+    else {
+      result.blocks.push_back({key, it->second.revision, false});
+      it->second.change_pending = false;
+    }
   }
   pending_blocks_.clear();
+  removed_blocks_.clear();
   reset_pending_ = false;
   bounds_changed_pending_ = false;
   return result;
@@ -242,6 +290,8 @@ VoxelMapMemoryStats SparseVoxelMap::memory_stats() const noexcept {
   }
   result.estimated_bytes = sizeof(*this) + result.block_storage_bytes + result.sample_capacity_bytes +
       blocks_.bucket_count() * sizeof(void*) + pending_blocks_.capacity() * sizeof(BlockKey);
+  result.estimated_bytes += removed_blocks_.bucket_count() * sizeof(void*) +
+      removed_blocks_.size() * sizeof(decltype(removed_blocks_)::value_type);
   return result;
 }
 
@@ -251,6 +301,7 @@ void SparseVoxelMap::clear() {
   require_revision_capacity();
   blocks_.clear();
   pending_blocks_.clear();
+  removed_blocks_.clear();
   voxel_count_ = 0;
   accepted_hit_count_ = 0;
   ++revision_;

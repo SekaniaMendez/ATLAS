@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace atlas::apps {
 
@@ -28,21 +29,28 @@ struct SlamOutputPaths {
   std::filesystem::path map;
   std::filesystem::path ply;
   std::filesystem::path trajectory;
+  std::filesystem::path session_report;
 
   void validate(bool slam_enabled) const {
-    if (!slam_enabled && (!map.empty() || !ply.empty() || !trajectory.empty()))
-      throw std::runtime_error("--map, --ply and --trajectory require --slam");
-    for (const auto& path : {map, ply, trajectory}) {
+    if (!slam_enabled && (!map.empty() || !ply.empty() || !trajectory.empty() || !session_report.empty()))
+      throw std::runtime_error("--map, --ply, --trajectory and --session-report require --slam");
+    const std::vector<std::filesystem::path> paths{map, ply, trajectory, session_report};
+    for (const auto& path : paths) {
       if (!path.empty() && std::filesystem::exists(path))
         throw std::runtime_error("Output already exists; choose a new destination: " + path.string());
     }
-    if ((!map.empty() && (map == ply || map == trajectory)) ||
-        (!ply.empty() && ply == trajectory))
-      throw std::runtime_error("Each SLAM output needs a different destination");
+    for (size_t i = 0; i < paths.size(); ++i)
+      for (size_t j = i + 1; j < paths.size(); ++j)
+        if (!paths[i].empty() && paths[i] == paths[j])
+          throw std::runtime_error("Each SLAM output needs a different destination");
   }
 
   void save(const slam::VoxelSlamEngine& engine) const {
     const auto stats = engine.stats();
+    if (!session_report.empty()) {
+      engine.export_session_report(session_report);
+      std::cout << "[ATLAS SLAM] session_report=" << session_report << '\n';
+    }
     if (stats.map_voxels != 0) {
       if ((stats.fatal_error || stats.state == slam::TrackingState::Lost) &&
           (!map.empty() || !ply.empty() || !trajectory.empty()))
@@ -81,7 +89,7 @@ inline sensors::LidarFrame map_snapshot(const slam::VoxelSlamEngine& engine, siz
     frame.points.push_back({.x_m = static_cast<float>(point.x_m),
                             .y_m = static_cast<float>(point.y_m),
                             .z_m = static_cast<float>(point.z_m),
-                            .reflectivity = point.reflectivity});
+                            .reflectivity = point.reflectivity, .rgb = point.rgb, .has_color = point.has_color});
   }
   return frame;
 }
@@ -114,6 +122,12 @@ inline void print_slam_status(const slam::VoxelSlamEngine& engine) {
             << " scans=" << stats.scans_processed << " accepted=" << stats.scans_accepted
             << " rejected=" << stats.scans_rejected
             << " voxels=" << stats.map_voxels << " blocks=" << stats.map_blocks
+            << " candidates=" << stats.candidate_voxels << " cleared=" << stats.cleared_voxels
+            << " provisional_reference=" << stats.provisional_matching_voxels
+            << " contradicted_candidates=" << stats.contradicted_candidate_voxels
+            << " expired_candidates=" << stats.expired_candidate_voxels
+            << " temporal_skipped=" << stats.temporal_skipped_scans
+            << " colored=" << stats.colored_points << " color_conflicts=" << stats.color_conflicts
             << " rmse_m=" << stats.last_rmse_m
             << " correspondences=" << stats.last_correspondences
             << " rejected_events=" << stats.rejected_events;

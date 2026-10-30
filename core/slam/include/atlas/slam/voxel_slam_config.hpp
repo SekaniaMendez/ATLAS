@@ -2,6 +2,8 @@
 
 #include <atlas/slam/sparse_voxel_map_config.hpp>
 #include <atlas/slam/voxel_registration_config.hpp>
+#include <atlas/slam/temporal_canvas_config.hpp>
+#include <atlas/slam/camera_fusion_config.hpp>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +17,8 @@ struct VoxelSlamConfig {
   SparseVoxelMapConfig canvas{.voxel_size_m = 0.05, .max_samples_per_voxel = 1};
   SparseVoxelMapConfig matching_map{.voxel_size_m = 0.20, .max_samples_per_voxel = 8};
   VoxelRegistrationConfig registration;
+  TemporalCanvasConfig temporal_canvas;
+  CameraFusionConfig camera_fusion;
   uint64_t scan_duration_ns = 100'000'000;
   uint64_t max_scan_duration_ns = 250'000'000;
   size_t minimum_scan_points = 100;
@@ -34,7 +38,14 @@ struct VoxelSlamConfig {
   uint64_t imu_history_ns = 3'000'000'000;
   size_t maximum_imu_samples = 4'096;
   double gravity_m_s2 = 9.80665;
+  /// Bound on the candidate mean gyro bias before accepting a stationary window.
+  /// IMU alone cannot distinguish a small constant yaw rate from sensor bias;
+  /// the sensor must be held still during initialization.
+  double maximum_initialization_gyro_bias_rad_s = 0.05;
+  /// Maximum individual gyro residual after removing the candidate mean bias.
   double stationary_gyro_limit_rad_s = 0.03;
+  /// Root mean squared vector residual, not a per-axis standard deviation.
+  double stationary_gyro_stddev_rad_s = 0.01;
   double stationary_accel_tolerance_m_s2 = 1.0;
   double stationary_accel_stddev_m_s2 = 0.20;
   /// Rotation of IMU vectors into the LiDAR axes, quaternion x,y,z,w.

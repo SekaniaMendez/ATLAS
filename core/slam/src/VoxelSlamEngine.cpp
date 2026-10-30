@@ -2,6 +2,8 @@
 #include <atlas/storage/VoxelMapArchive.hpp>
 #include "ImuTracker.hpp"
 #include "VoxelRegistration.hpp"
+#include "TemporalCanvas.hpp"
+#include "CameraColorizer.hpp"
 
 #include <Eigen/Geometry>
 #include <algorithm>
@@ -72,9 +74,11 @@ void validate(const VoxelSlamConfig& c) {
       c.imu_history_ns - c.imu_initialization_ns < c.max_scan_duration_ns ||
       c.maximum_imu_samples < c.minimum_initialization_imu_samples ||
       !positive(c.gravity_m_s2) || !positive(c.stationary_gyro_limit_rad_s) ||
+      !positive(c.maximum_initialization_gyro_bias_rad_s) || !positive(c.stationary_gyro_stddev_rad_s) ||
       !positive(c.stationary_accel_tolerance_m_s2) || !positive(c.stationary_accel_stddev_m_s2) ||
       !positive(c.maximum_prediction_interval_s) || !positive(c.maximum_speed_m_s) ||
       !positive(c.matching_keyframe_translation_m) || !positive(c.matching_keyframe_rotation_rad) ||
+      (c.temporal_canvas.enabled && c.canvas.voxel_size_m > c.matching_map.voxel_size_m) ||
       !std::isfinite(c.velocity_smoothing) || c.velocity_smoothing < 0 || c.velocity_smoothing > 1)
     throw std::invalid_argument("Invalid VoxelSlamConfig: sizes, durations and thresholds must be bounded and positive");
   double norm = 0;
@@ -105,7 +109,9 @@ class VoxelSlamEngine::Impl {
  public:
   explicit Impl(VoxelSlamConfig config)
       : config_(std::move(config)), canvas_(config_.canvas), matching_(config_.matching_map),
-        registration_(config_.registration), imu_(config_) {
+        registration_(config_.registration), imu_(config_),
+        temporal_(config_.temporal_canvas, config_.max_canvas_blocks, config_.max_matching_blocks),
+        colorizer_(config_.camera_fusion) {
     validate(config_);
     worker_ = std::thread([this] { run(); });
   }
@@ -198,7 +204,16 @@ class VoxelSlamEngine::Impl {
     std::lock_guard lock(state_mutex_);
     if (!canvas_.voxel_count()) throw std::runtime_error("Cannot save an empty SLAM map");
     storage::VoxelMapArchive::save(path, canvas_);
-    NewFile metadata(path / "slam_session.txt");
+    write_session_report(path / "slam_session.txt");
+  }
+  void session_report(const std::filesystem::path& path) const {
+    require_finished();
+    std::lock_guard lock(state_mutex_);
+    write_session_report(path);
+  }
+  // Caller holds state_mutex_; keep standalone and archive metadata identical.
+  void write_session_report(const std::filesystem::path& path) const {
+    NewFile metadata(path);
     std::fprintf(metadata.get(),
         "algorithm=ATLAS voxel scan-to-map prototype\n"
         "frame=local metric; initial position and yaw arbitrary\n"
@@ -218,6 +233,34 @@ class VoxelSlamEngine::Impl {
         static_cast<unsigned long long>(stats_.scans_rejected),
         static_cast<unsigned>(stats_.state), static_cast<unsigned>(stats_.fatal_error),
         stats_.message.c_str());
+    std::fprintf(metadata.get(),
+        "temporal_canvas_enabled=%u\nconfirmation_scans=%u\nclearing_scans=%u\n"
+        "temporal_evidence_window_ns=%llu\ncandidate_lifetime_ns=%llu\n"
+        "ray_tolerance_m=%.9g\nsurface_margin_m=%.9g\nmaximum_rays_per_scan=%zu\n"
+        "candidate_voxels=%llu\ncleared_voxels=%llu\nexpired_candidate_voxels=%llu\n"
+        "temporal_skipped_scans=%llu\nprovisional_matching_voxels=%llu\ncontradicted_candidate_voxels=%llu\n",
+        static_cast<unsigned>(config_.temporal_canvas.enabled), config_.temporal_canvas.confirmation_scans,
+        config_.temporal_canvas.clearing_scans,
+        static_cast<unsigned long long>(config_.temporal_canvas.evidence_window_ns),
+        static_cast<unsigned long long>(config_.temporal_canvas.candidate_lifetime_ns),
+        config_.temporal_canvas.ray_tolerance_m, config_.temporal_canvas.surface_margin_m,
+        config_.temporal_canvas.maximum_rays_per_scan,
+        static_cast<unsigned long long>(stats_.candidate_voxels),
+        static_cast<unsigned long long>(stats_.cleared_voxels),
+        static_cast<unsigned long long>(stats_.expired_candidate_voxels),
+        static_cast<unsigned long long>(stats_.temporal_skipped_scans),
+        static_cast<unsigned long long>(stats_.provisional_matching_voxels),
+        static_cast<unsigned long long>(stats_.contradicted_candidate_voxels));
+    std::fprintf(metadata.get(),
+        "camera_clock_alignment_verified=%u\nphone_to_lidar_offset_ns=%lld\n"
+        "camera_clock_uncertainty_ns=%llu\ncamera_lidar_clock=%u\n"
+        "colored_points=%llu\ncolor_conflicts=%llu\n",
+        static_cast<unsigned>(config_.camera_fusion.clock_alignment_verified),
+        static_cast<long long>(config_.camera_fusion.phone_to_lidar_offset_ns),
+        static_cast<unsigned long long>(config_.camera_fusion.clock_uncertainty_ns),
+        static_cast<unsigned>(config_.camera_fusion.lidar_clock),
+        static_cast<unsigned long long>(stats_.colored_points),
+        static_cast<unsigned long long>(stats_.color_conflicts));
     metadata.close();
   }
   void ply(const std::filesystem::path& path) const {
@@ -227,14 +270,19 @@ class VoxelSlamEngine::Impl {
     NewFile file(path);
     std::fprintf(file.get(), "ply\nformat ascii 1.0\ncomment ATLAS local SLAM prototype; one measured point per voxel\n"
                  "element vertex %zu\nproperty double x\nproperty double y\nproperty double z\n"
-                 "property uchar reflectivity\nend_header\n", canvas_.voxel_count());
+                 "property uchar reflectivity\nproperty uchar red\nproperty uchar green\n"
+                 "property uchar blue\nproperty uchar has_color\nend_header\n", canvas_.voxel_count());
     for (const auto& [key, block] : canvas_.blocks()) {
       (void)key;
       for (const auto& voxel : block.voxels) {
         if (voxel.samples.empty()) continue;
         const auto& p = voxel.samples.back();
-        std::fprintf(file.get(), "%.9f %.9f %.9f %u\n", p.x_m, p.y_m, p.z_m,
-                     static_cast<unsigned>(p.reflectivity));
+        std::fprintf(file.get(), "%.9f %.9f %.9f %u %u %u %u %u\n", p.x_m, p.y_m, p.z_m,
+                     static_cast<unsigned>(p.reflectivity),
+                     static_cast<unsigned>(p.has_color ? p.rgb[0] : p.reflectivity),
+                     static_cast<unsigned>(p.has_color ? p.rgb[1] : p.reflectivity),
+                     static_cast<unsigned>(p.has_color ? p.rgb[2] : p.reflectivity),
+                     static_cast<unsigned>(p.has_color));
       }
     }
     file.close();
@@ -251,6 +299,7 @@ class VoxelSlamEngine::Impl {
     file.close();
   }
   VoxelSlamConfig config() const { return config_; }
+  bool camera(sensors::CameraRgbFrame frame) { return colorizer_.submit(std::move(frame)); }
 
  private:
   bool can_enqueue(size_t bytes) {
@@ -342,6 +391,7 @@ class VoxelSlamEngine::Impl {
     if (!config_.use_imu) return;
     if (!identity(sample.sensor_id, sample.timestamp.source)) return;
     if (!imu_.add(sample)) { ++stats_.rejected_events; return; }
+    latest_measurement_ns_ = std::max(latest_measurement_ns_, sample.timestamp.nanoseconds);
     ++stats_.imu_samples;
     if (!pose_) {
       stats_.state = TrackingState::Initializing;
@@ -365,6 +415,7 @@ class VoxelSlamEngine::Impl {
       if (p.offset_ns > frame.duration_ns) { ++stats_.rejected_events; return; }
     last_lidar_time_ = begin;
     const uint64_t end = begin + frame.duration_ns;
+    latest_measurement_ns_ = std::max(latest_measurement_ns_, end);
     if (!assembling_.points.empty() && end - assembling_.begin > config_.max_scan_duration_ns) seal();
     if (assembling_.points.empty()) assembling_.begin = begin;
     assembling_.end = std::max(assembling_.end, end);
@@ -396,13 +447,28 @@ class VoxelSlamEngine::Impl {
     }
     pending_.push_back(std::move(assembling_)); assembling_ = {};
   }
+  bool short_final_imu_tail(const Scan& scan) const {
+    if (!config_.use_imu || !imu_.ready() || !pose_) return false;
+    const uint64_t last_imu = imu_.latest_time();
+    const uint64_t last_pose = pose_->timestamp.nanoseconds;
+    if (last_imu >= scan.end || scan.end - last_imu > config_.maximum_imu_gap_ns ||
+        scan.end <= last_pose ||
+        static_cast<double>(scan.end - last_pose) * 1e-9 > config_.maximum_prediction_interval_s)
+      return false;
+    // EOF may fall just before a scan boundary, leaving both that scan and a
+    // short successor pending. Only missing end coverage is benign: verify the
+    // available prefix, including the interval since the last accepted pose,
+    // so an internal gap or missing history cannot be hidden by finalization.
+    return imu_.path(std::min(scan.begin, last_pose), last_imu).has_value();
+  }
   void drain(bool final) {
     while (!pending_.empty()) {
       const auto& scan = pending_.front();
+      if (!final && config_.camera_fusion.clock_alignment_verified &&
+          (latest_measurement_ns_ < scan.end ||
+           latest_measurement_ns_ - scan.end < config_.camera_fusion.maximum_wait_ns)) return;
       if (config_.use_imu && imu_.ready() && imu_.latest_time() < scan.end && !final) return;
-      if (final && pending_.size() == 1 && config_.use_imu && imu_.ready() &&
-          imu_.latest_time() < scan.end &&
-          scan.end - imu_.latest_time() <= config_.maximum_imu_gap_ns) {
+      if (final && short_final_imu_tail(scan)) {
         ++stats_.scans_processed; ++stats_.scans_rejected;
         if (stats_.state != TrackingState::Lost)
           stats_.message = "Final scan discarded: IMU ends before scan; last complete pose retained";
@@ -432,7 +498,9 @@ class VoxelSlamEngine::Impl {
       if (!cells.insert(key).second) continue;
       auto p = timed.point;
       p.x_m = static_cast<float>(point.x()); p.y_m = static_cast<float>(point.y());
-      p.z_m = static_cast<float>(point.z()); p.offset_ns = 0;
+      p.z_m = static_cast<float>(point.z());
+      // Preserve acquisition time relative to the assembled scan for free-space rays.
+      p.offset_ns = static_cast<uint32_t>(timed.time - scan.begin);
       result.push_back(p);
     }
     return result;
@@ -443,7 +511,8 @@ class VoxelSlamEngine::Impl {
     const auto r = rotation(pose); const auto t = position(pose);
     for (const auto& p : points) {
       const Vector w = r * Vector(p.x_m, p.y_m, p.z_m) + t;
-      result.push_back({.x_m = w.x(), .y_m = w.y(), .z_m = w.z(), .reflectivity = p.reflectivity});
+      result.push_back({.x_m = w.x(), .y_m = w.y(), .z_m = w.z(), .reflectivity = p.reflectivity,
+                        .rgb = p.rgb, .has_color = p.has_color, .color_timestamp_ns = p.color_timestamp_ns});
     }
     return result;
   }
@@ -539,21 +608,48 @@ class VoxelSlamEngine::Impl {
         reject_scan("Estimated speed exceeds configured motion limit"); return;
       }
     }
+    stats_.colored_points += colorizer_.colorize(points, accepted.timestamp, scan.begin);
     const auto transformed = world_points(points, accepted);
     const bool new_keyframe = !matching_pose_ ||
         (position(accepted) - position(*matching_pose_)).norm() >= config_.matching_keyframe_translation_m ||
         rotation(accepted).angularDistance(rotation(*matching_pose_)) >= config_.matching_keyframe_rotation_rad;
     if (!fits(canvas_, transformed, config_.max_canvas_blocks) ||
-        (new_keyframe && !fits(matching_, transformed, config_.max_matching_blocks)) ||
+        ((new_keyframe || config_.temporal_canvas.enabled) &&
+         !fits(matching_, transformed, config_.max_matching_blocks)) ||
         trajectory_.size() >= config_.max_trajectory_poses) {
       if (seed) matching_.clear();
       fail("SLAM map or trajectory budget exceeded; save and start a new session"); return;
     }
-    insert(canvas_, transformed);
-    if (new_keyframe) {
-      if (!seed) insert(matching_, transformed);
-      matching_pose_ = accepted;
+    bool temporal_paused = false;
+    if (config_.temporal_canvas.enabled) {
+      std::vector<RayObservation> rays;
+      rays.reserve(transformed.size());
+      const Rotation correction = rotation(accepted) * rotation(predicted).conjugate();
+      for (size_t i = 0; i < points.size(); ++i) {
+        const double dt = static_cast<double>(scan.end - scan.begin - points[i].offset_ns) * 1e-9;
+        const Vector origin = position(accepted) - correction * velocity_ * dt;
+        rays.push_back({{.x_m = origin.x(), .y_m = origin.y(), .z_m = origin.z()}, transformed[i]});
+      }
+      const bool reliable = seed ||
+          (aligned.rmse_m <= config_.temporal_canvas.maximum_pose_rmse_m &&
+           aligned.condition_number <= config_.temporal_canvas.maximum_pose_condition_number);
+      temporal_.update(scan.end, rays, reliable, canvas_, matching_);
+      temporal_paused = !reliable;
+      const auto temporal_stats = temporal_.stats();
+      stats_.candidate_voxels = temporal_stats.candidate_cells;
+      stats_.provisional_matching_voxels = temporal_stats.provisional_matching_cells;
+      stats_.cleared_voxels = temporal_stats.cleared_cells;
+      stats_.contradicted_candidate_voxels = temporal_stats.contradicted_candidates;
+      stats_.expired_candidate_voxels = temporal_stats.expired_candidates;
+      stats_.temporal_skipped_scans = temporal_stats.skipped_scans;
+      stats_.color_conflicts = temporal_stats.color_conflicts;
+      (void)canvas_.take_changes();
+      (void)matching_.take_changes();
+    } else {
+      insert(canvas_, transformed);
+      if (new_keyframe && !seed) insert(matching_, transformed);
     }
+    if (new_keyframe) matching_pose_ = accepted;
     velocity_ = seed ? Vector::Zero().eval()
                     : ((1.0 - config_.velocity_smoothing) * velocity_ +
                         config_.velocity_smoothing * new_velocity).eval();
@@ -564,6 +660,10 @@ class VoxelSlamEngine::Impl {
     tracking_failure_cause_.clear();
     stats_.message = seed ? "Local map initialized; initial yaw and position are arbitrary"
                          : "Tracking against voxel map";
+    if (seed && config_.temporal_canvas.enabled)
+      stats_.message = "Local reference initialized; canvas awaiting temporal confirmation; origin/yaw arbitrary";
+    if (temporal_paused)
+      stats_.message = "Pose accepted; temporal map frozen: registration quality below mapping threshold";
   }
   VoxelSlamConfig config_;
   mutable std::mutex state_mutex_, queue_mutex_;
@@ -578,6 +678,8 @@ class VoxelSlamEngine::Impl {
   SparseVoxelMap canvas_, matching_;
   VoxelRegistration registration_;
   ImuTracker imu_;
+  TemporalCanvas temporal_;
+  CameraColorizer colorizer_;
   Scan assembling_;
   std::deque<Scan> pending_;
   std::optional<uint32_t> sensor_id_;
@@ -588,6 +690,7 @@ class VoxelSlamEngine::Impl {
   std::vector<PoseEstimate> trajectory_;
   Vector velocity_ = Vector::Zero();
   SlamStats stats_;
+  uint64_t latest_measurement_ns_ = 0;
   /// Retain the first rejection in an uninterrupted tracking loss. Later gap
   /// guards must not hide the event that actually caused tracking to stop.
   std::string tracking_failure_cause_;
@@ -596,6 +699,7 @@ class VoxelSlamEngine::Impl {
 VoxelSlamEngine::VoxelSlamEngine(VoxelSlamConfig config) : impl_(std::make_unique<Impl>(std::move(config))) {}
 VoxelSlamEngine::~VoxelSlamEngine() = default;
 void VoxelSlamEngine::on_lidar_frame(const sensors::LidarFrame& v) { impl_->enqueue(v); }
+bool VoxelSlamEngine::submit_camera_image(sensors::CameraRgbFrame frame) { return impl_->camera(std::move(frame)); }
 void VoxelSlamEngine::on_imu_sample(const imu::ImuSample& v) { impl_->enqueue(v); }
 void VoxelSlamEngine::reset() {
   const auto config = impl_->config();
@@ -610,4 +714,5 @@ std::vector<PoseEstimate> VoxelSlamEngine::trajectory() const { return impl_->tr
 void VoxelSlamEngine::save_map(const std::filesystem::path& path) const { impl_->save(path); }
 void VoxelSlamEngine::export_ply(const std::filesystem::path& path) const { impl_->ply(path); }
 void VoxelSlamEngine::export_trajectory(const std::filesystem::path& path) const { impl_->csv(path); }
+void VoxelSlamEngine::export_session_report(const std::filesystem::path& path) const { impl_->session_report(path); }
 }  // namespace atlas::slam

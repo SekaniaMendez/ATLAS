@@ -1,3 +1,4 @@
+#include "../common/CameraFusionOptions.hpp"
 #include <atlas/livox/LivoxSource.hpp>
 #include <atlas/preprocessing/SensorPreprocessor.hpp>
 #include <atlas/sensors/ISensorDataSink.hpp>
@@ -80,21 +81,30 @@ int run_probe(int argc, char** argv) {
   const atlas::apps::SlamAppConfig app_config;
   atlas::apps::SlamOutputPaths outputs;
   std::string record_directory, metadata_path;
+  atlas::apps::CameraFusionOptions camera_options;
+  atlas::slam::VoxelSlamConfig slam_config;
   bool has_config = false, use_slam = false;
   for (int i = 1; i < argc; ++i) {
     const std::string argument = argv[i];
-    if ((argument == "--record" || argument == "--metadata") && i + 1 < argc) {
+    if (camera_options.parse(argument, i, argc, argv)) {
+      continue;
+    } else if ((argument == "--record" || argument == "--metadata") && i + 1 < argc) {
       (argument == "--record" ? record_directory : metadata_path) = argv[++i];
     } else if (argument == "--slam") {
       use_slam = true;
-    } else if ((argument == "--map" || argument == "--ply" || argument == "--trajectory") && i + 1 < argc) {
+    } else if ((argument == "--map" || argument == "--ply" || argument == "--trajectory" ||
+                argument == "--session-report") && i + 1 < argc) {
       const std::filesystem::path path = argv[++i];
       if (argument == "--map") outputs.map = path;
       else if (argument == "--ply") outputs.ply = path;
+      else if (argument == "--session-report") outputs.session_report = path;
       else outputs.trajectory = path;
     } else if (argument == "--help") {
       std::cout << "atlas_livox_probe [config.json] [--record NEW_DIRECTORY] [--metadata CALIBRATION_FILE]\n"
                    "                  [--slam] [--map NEW_DIRECTORY] [--ply NEW_FILE] [--trajectory NEW_FILE]\n"
+                   "                  [--session-report NEW_FILE]\n"
+                   "                  [--camera-offset-ns N --camera-uncertainty-ns N --camera-lidar-clock TYPE]\n"
+                   "Camera clocks require measured alignment; TYPE: unsynchronized, ptp, gps.\n"
                    "SLAM starts in a local metric frame. Keep the sensor still during IMU initialization.\n"
                    "Map/PLY/trajectory outputs require --slam and are written on Ctrl+C.\n";
       return 0;
@@ -104,6 +114,7 @@ int run_probe(int argc, char** argv) {
   }
   if (!metadata_path.empty() && record_directory.empty()) throw std::runtime_error("--metadata requires --record");
   outputs.validate(use_slam);
+  slam_config.camera_fusion = camera_options.config(use_slam);
 
   atlas::sensors::SensorDataBus raw_data_bus;
   atlas::sensors::SensorDataBus processed_data_bus;
@@ -128,8 +139,11 @@ int run_probe(int argc, char** argv) {
     recording_subscription = raw_data_bus.subscribe(recorder);
     std::cout << "[ATLAS CAPTURE] recording raw LiDAR/IMU to " << record_directory << '\n';
   }
+  atlas::preprocessing::SensorPreprocessorConfig preprocessing_config;
+  preprocessing_config.filter_mid360_low_confidence_tags = true;
   auto preprocessor =
-      std::make_shared<atlas::preprocessing::SensorPreprocessor>(processed_data_bus);
+      std::make_shared<atlas::preprocessing::SensorPreprocessor>(processed_data_bus, preprocessing_config);
+  std::cout << "[ATLAS PREPROCESSING] MID-360 low-confidence tag filtering enabled\n";
   const auto preprocessing_subscription = raw_data_bus.subscribe(preprocessor);
 
   auto console = std::make_shared<ConsoleSink>(!use_slam);
@@ -137,29 +151,41 @@ int run_probe(int argc, char** argv) {
   std::shared_ptr<atlas::slam::VoxelSlamEngine> slam;
   atlas::sensors::SensorDataBus::SubscriptionId slam_subscription = 0;
   if (use_slam) {
-    slam = std::make_shared<atlas::slam::VoxelSlamEngine>();
+    slam = std::make_shared<atlas::slam::VoxelSlamEngine>(slam_config);
     slam_subscription = processed_data_bus.subscribe(slam);
     std::cout << "[ATLAS SLAM] local voxel map enabled; keep MID-360 stationary for initialization\n";
   }
 
 #ifdef ATLAS_HAS_UI_STREAM
   atlas::ui::UiStreamServerConfig ui_config;
+  ui_config.source_kind = atlas::ui::StreamSourceKind::LiveLidar;
   ui_config.world_frame = use_slam;
   if (use_slam) {
     ui_config.max_points_per_frame = app_config.maximum_snapshot_points;
     ui_config.max_pending_points = app_config.maximum_snapshot_points;
   }
-  auto ui_stream = std::make_shared<atlas::ui::UiStreamServer>(ui_config);
+  auto ui_stream = std::make_shared<atlas::ui::UiStreamServer>(ui_config,
+      [slam](atlas::sensors::CameraRgbFrame image) {
+        return slam && slam->submit_camera_image(std::move(image));
+      });
   if (!ui_stream->start()) {
     std::cerr << "[ATLAS UI] stream unavailable: " << ui_stream->last_error() << '\n';
   } else {
     std::cout << "[ATLAS UI] " << (use_slam ? "SLAM map" : "point")
               << " stream listening on TCP " << ui_config.port << " (_atlas._tcp)\n";
+    if (use_slam)
+      std::cout << "[ATLAS GEOMETRY] live measured-plane preview enabled; background updates every "
+                << ui_config.geometry_interval.count() << " ms\n";
   }
   std::shared_ptr<atlas::sensors::ISensorDataSink> ui_sink = ui_stream;
   if (use_slam) ui_sink = std::make_shared<atlas::apps::WarningRelay>(ui_stream);
   const auto ui_subscription = processed_data_bus.subscribe(ui_sink);
 #endif
+
+  if (use_slam)
+    std::cout << "[ATLAS CAMERA] " << (slam_config.camera_fusion.clock_alignment_verified
+        ? "clock alignment configured; awaiting verified camera frames"
+        : "RGB evidence disabled: measured phone/LiDAR clock alignment required") << '\n';
 
   atlas::livox::LivoxSource source(raw_data_bus, std::move(config));
   if (!source.start()) {
@@ -230,6 +256,7 @@ int run_probe(int argc, char** argv) {
   std::cout << "[ATLAS PREPROCESSING] lidar_points_received="
             << preprocessing_stats.lidar_points_received
             << " lidar_points_rejected=" << preprocessing_stats.lidar_points_rejected
+            << " lidar_points_rejected_by_tag=" << preprocessing_stats.lidar_points_rejected_by_tag
             << " imu_samples=" << preprocessing_stats.imu_samples_received
             << " warnings=" << preprocessing_stats.warnings_published << '\n';
 #ifdef ATLAS_HAS_UI_STREAM
@@ -240,6 +267,8 @@ int run_probe(int argc, char** argv) {
             << " points_sent=" << ui_stats.points_sent
             << " dropped_points=" << ui_stats.dropped_points
             << " warnings_sent=" << ui_stats.warnings_sent << '\n';
+  std::cout << "[ATLAS CAMERA] received=" << ui_stats.camera_frames_received
+            << " rejected=" << ui_stats.camera_frames_rejected << '\n';
   std::cout << "[ATLAS UI] slam_statuses_sent=" << ui_stats.slam_statuses_sent << '\n';
 #endif
   processed_data_bus.unsubscribe(subscription);

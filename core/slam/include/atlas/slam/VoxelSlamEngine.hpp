@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atlas/slam/ISlamEngine.hpp>
+#include <atlas/sensors/CameraRgbFrame.hpp>
 #include <atlas/slam/SparseVoxelMap.hpp>
 #include <atlas/slam/voxel_slam_config.hpp>
 #include <filesystem>
@@ -18,6 +19,14 @@ struct SlamStats {
   uint64_t map_voxels = 0;
   uint64_t map_blocks = 0;
   uint64_t imu_samples = 0;
+  uint64_t candidate_voxels = 0;
+  uint64_t colored_points = 0;
+  uint64_t color_conflicts = 0;
+  uint64_t provisional_matching_voxels = 0;
+  uint64_t cleared_voxels = 0;
+  uint64_t contradicted_candidate_voxels = 0;
+  uint64_t expired_candidate_voxels = 0;
+  uint64_t temporal_skipped_scans = 0;
   size_t queued_bytes = 0;
   size_t peak_queued_bytes = 0;
   double last_rmse_m = 0.0;
@@ -39,6 +48,7 @@ class VoxelSlamEngine final : public ISlamEngine {
   VoxelSlamEngine(const VoxelSlamEngine&) = delete;
   VoxelSlamEngine& operator=(const VoxelSlamEngine&) = delete;
   void on_lidar_frame(const sensors::LidarFrame&) override;
+  bool submit_camera_image(sensors::CameraRgbFrame frame);
   void on_imu_sample(const imu::ImuSample&) override;
   void reset() override;
   [[nodiscard]] std::optional<PoseEstimate> latest_pose() const override;
@@ -54,6 +64,8 @@ class VoxelSlamEngine final : public ISlamEngine {
   void save_map(const std::filesystem::path& new_directory) const;
   void export_ply(const std::filesystem::path& new_file) const;
   void export_trajectory(const std::filesystem::path& new_file) const;
+  /// Coordinate frame and quality metadata without storing a point-cloud archive.
+  void export_session_report(const std::filesystem::path& new_file) const;
 
  private:
   class Impl;

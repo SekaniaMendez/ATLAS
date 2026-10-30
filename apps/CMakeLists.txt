@@ -3,6 +3,9 @@
 add_executable(atlas_slam_demo slam_demo/atlas_slam_demo.cpp)
 target_link_libraries(atlas_slam_demo PRIVATE atlas_core)
 
+add_executable(atlas_calibration_export calibration_export/atlas_calibration_export.cpp)
+target_link_libraries(atlas_calibration_export PRIVATE atlas_core)
+
 add_executable(atlas_capture capture/atlas_capture.cpp)
 if(TARGET atlas_ui_stream)
   target_link_libraries(atlas_capture PRIVATE atlas_ui_stream)
@@ -36,6 +39,8 @@ endif()
 # UI streaming demo
 # ----------------------------
 if(TARGET atlas_ui_stream)
+  add_executable(atlas_geometry_preview geometry_preview/atlas_geometry_preview.cpp)
+  target_link_libraries(atlas_geometry_preview PRIVATE atlas_ui_stream)
   add_executable(atlas_ui_demo
     ui_demo/atlas_ui_demo.cpp
   )

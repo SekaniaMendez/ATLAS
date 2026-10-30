@@ -1,0 +1,89 @@
+{
+  "units": "mm",
+  "default_pole_diameter_mm": 35,
+  "parts": [
+    {
+      "file": "01_cuerpo_lateral_x1.stl",
+      "quantity": 1,
+      "suggested_material": "PETG/ASA",
+      "dimensions_mm": [
+        78.8987,
+        191.9,
+        194.25
+      ]
+    },
+    {
+      "file": "02_tapa_abrazadera_x2.stl",
+      "quantity": 2,
+      "suggested_material": "PETG/ASA",
+      "dimensions_mm": [
+        26.9,
+        82.8,
+        24.0
+      ]
+    },
+    {
+      "file": "03_cuna_iphone14pro_x1.stl",
+      "quantity": 1,
+      "suggested_material": "PETG/ASA",
+      "dimensions_mm": [
+        83.5,
+        105.15,
+        22.0
+      ]
+    },
+    {
+      "file": "04_mordaza_movil_x1.stl",
+      "quantity": 1,
+      "suggested_material": "PETG/ASA",
+      "dimensions_mm": [
+        35.0,
+        44.0,
+        25.575
+      ]
+    },
+    {
+      "file": "05_casquillo_35mm_x4.stl",
+      "quantity": 4,
+      "suggested_material": "TPU",
+      "dimensions_mm": [
+        19.7,
+        42.2869,
+        23.0
+      ]
+    },
+    {
+      "file": "opcionales/05_casquillo_30mm_x4.stl",
+      "quantity": 4,
+      "suggested_material": "TPU",
+      "dimensions_mm": [
+        19.7,
+        42.2869,
+        23.0
+      ]
+    },
+    {
+      "file": "opcionales/05_casquillo_40mm_x4.stl",
+      "quantity": 4,
+      "suggested_material": "TPU",
+      "dimensions_mm": [
+        19.7,
+        42.2869,
+        23.0
+      ]
+    }
+  ],
+  "excluded": [
+    "pole",
+    "iPhone",
+    "MID-360",
+    "GNSS",
+    "metal fasteners"
+  ],
+  "physical_prototype": true,
+  "phone_shift_from_seed_mm": [
+    -16,
+    60,
+    0
+  ]
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ATLAS · Planos y referencias</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#eaf0f5;background:#101820}
+*{box-sizing:border-box}body{margin:0}button,a,input{font:inherit}button,a{touch-action:manipulation}
+button{color:inherit;background:#23323d;border:1px solid #40515e;border-radius:7px;padding:8px 12px;cursor:pointer}button:hover,button:focus-visible{background:#314758;outline-color:#64d1dc}
+button.active{border-color:#77d5df;background:#28444e}a{color:#8ce1e5;text-decoration:none}a:hover{text-decoration:underline}
+header{min-height:72px;padding:15px 22px;display:flex;align-items:center;gap:20px;border-bottom:1px solid #2f404a;background:#14202a}
+h1{font-size:19px;margin:0 0 3px;font-weight:650}h2{font-size:14px;margin:18px 0 10px}p{margin:0;font-size:12px;color:#afbdc7;line-height:1.5}.source{overflow:hidden;text-overflow:ellipsis;max-width:55vw;white-space:nowrap}
+.brand{color:#5bd1d4;font-weight:800;font-size:13px;letter-spacing:2px;margin-right:5px}.headeractions{margin-left:auto;display:flex;gap:10px;align-items:center;font-size:13px}
+main{height:calc(100vh - 73px);height:calc(100dvh - 73px);display:grid;grid-template-columns:minmax(0,1fr) 306px}.stage{position:relative;min-height:300px;overflow:hidden;background:radial-gradient(ellipse at 45% 35%,#253948,#111c25 80%)}
+canvas{width:100%;height:100%;display:block;touch-action:none;outline:none}.toolbar{position:absolute;top:15px;left:15px;display:flex;gap:7px;flex-wrap:wrap}.toolbar button{background:#172631df;font-size:12px;padding:7px 10px}.caption{position:absolute;left:16px;bottom:15px;color:#c5d2db;font-size:11px;background:#101a23cb;border:1px solid #34444e;padding:9px 12px;border-radius:8px;pointer-events:none}.caption span{display:inline-block;margin-right:11px}.x{color:#ff6666}.y{color:#6ddd8d}.z{color:#6da7ff}
+aside{background:#16232d;border-left:1px solid #34434e;padding:17px;overflow:auto}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metric{border:1px solid #344550;border-radius:8px;padding:10px;background:#1c2b36}.metric b{font-size:19px;display:block;font-weight:650}.metric small{display:block;color:#acbcc8;font-size:11px;margin-top:3px}.filters{display:flex;flex-wrap:wrap;gap:10px;font-size:12px}.filters label{display:flex;align-items:center;gap:4px}input{accent-color:#5ec9d0}
+.note{padding:11px;background:#20343c;border-left:3px solid #66c1c9;border-radius:3px;font-size:12px;color:#c5d4dc;margin-top:14px;line-height:1.5}.warning{border-color:#e0b56d;background:#3a3021}.details{border:1px solid #3f5562;padding:11px;border-radius:8px;font-size:12px;line-height:1.8}.details strong{font-size:14px}.details code{font-size:10px;color:#b5cbd8;word-break:break-all}
+.surfaces{display:flex;flex-direction:column;gap:6px;margin-top:10px}.surface{width:100%;text-align:left;display:grid;grid-template-columns:12px 1fr;gap:9px;padding:9px;background:#1c2b36;border-color:#344650}.swatch{width:10px;height:10px;border-radius:3px;margin-top:5px}.surface strong{font-size:12px;display:block}.surface small{font-size:11px;color:#b3c2cb}.empty{color:#c0ccd4;padding:10px;font-size:12px}.error{position:absolute;inset:25% 10%;background:#412c2a;border:1px solid #b86d62;border-radius:12px;padding:24px;height:max-content;color:#f8dfd8;font-size:14px;line-height:1.6}.hidden{display:none!important}
+@media(max-width:740px){header{padding:11px 14px;min-height:70px;gap:8px}h1{font-size:16px}.headeractions{font-size:11px}.source{max-width:70vw}main{height:auto;grid-template-columns:1fr}.stage{height:62vh;min-height:360px}aside{border-left:0;border-top:1px solid #34434e;max-height:none}.metrics{grid-template-columns:repeat(4,1fr)}.metric{padding:8px}.metric b{font-size:16px}.surfaces{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.caption{right:12px;left:12px;font-size:10px}.source{font-size:10px}.headeractions a{max-width:85px;text-align:center}}
+</style>
+</head>
+<body>
+<header><div><h1><span class="brand">ATLAS</span> Planos y referencias</h1><p id="source" class="source"></p></div><div class="headeractions"><a id="download" class="hidden" download>Descargar GLB</a></div></header>
+<main><section class="stage" aria-label="Modelo tridimensional interactivo"><canvas id="view" tabindex="0" aria-label="Modelo 3D. Arrastra para girar, rueda para acercar. Usa los botones de vista o selecciona una superficie en la lista."></canvas>
+<div class="toolbar"><button id="reset">Perspectiva</button><button id="top">Planta</button><button id="front">Frente</button><button id="zoomIn" aria-label="Acercar">＋</button><button id="zoomOut" aria-label="Alejar">−</button></div>
+<div class="caption"><div>Arrastra para girar · Rueda o pellizco para acercar · Clic para seleccionar</div><div><span class="x">X rojo</span><span class="y">Y verde</span><span class="z">Z azul</span><span>Ejes del plano seleccionado y marco estructural</span></div></div><div id="error" class="error hidden" role="alert"></div></section>
+<aside><div class="metrics"><div class="metric"><b id="surfaceCount">—</b><small>Superficies</small></div><div class="metric"><b id="coverage">—</b><small>Cobertura medida</small></div><div class="metric"><b id="size">—</b><small id="size-label">Tamaño del modelo</small></div><div class="metric"><b id="reduction">—</b><small>Reducción frente a PLY</small></div></div>
+<p id="tolerance" style="margin-top:8px"></p><div class="note"><span id="model-status">Modelo de superficies observadas.</span> Los huecos y zonas sin soporte permanecen abiertos. Los tipos de plano describen orientación, no identifican objetos por sí solos.</div><div id="warnings"></div>
+<h2>Mostrar</h2><div class="filters"><label><input id="planes" type="checkbox" checked>Planos</label><label><input id="freeform" type="checkbox" checked>Otras superficies</label><label><input id="axes" type="checkbox" checked>Ejes</label><label><input id="wire" type="checkbox">Aristas</label></div>
+<h2>Referencia estructural</h2><p id="frameInfo"></p><h2>Superficie seleccionada</h2><div id="details" class="details">Selecciona una superficie del modelo o de la lista.</div><div id="list" class="surfaces"></div></aside></main>
+<script type="application/json" id="atlas-data">__ATLAS_DATA__</script>
+<script>
+'use strict';
+(() => {
+__ATLAS_SCRIPT__
+})();
+</script></body></html>

@@ -6,6 +6,7 @@ struct PointCloudSnapshot {
     let sequence: UInt32
     let timestampNanoseconds: UInt64
     let isWorldFrame: Bool
+    let hasRgb: Bool
 }
 
 final class PointCloudModel: ObservableObject, @unchecked Sendable {
@@ -18,6 +19,7 @@ final class PointCloudModel: ObservableObject, @unchecked Sendable {
     private var latestTimestamp: UInt64 = 0
     private var latestSequence: UInt32 = 0
     private var latestWorldFrame = false
+    private var latestRgb = false
     private var hasSnapshot = false
 
     func update(
@@ -25,13 +27,15 @@ final class PointCloudModel: ObservableObject, @unchecked Sendable {
         pointCount: Int,
         sequence: UInt32,
         timestampNanoseconds: UInt64,
-        isWorldFrame: Bool = false
+        isWorldFrame: Bool = false,
+        hasRgb: Bool = false
     ) {
         lock.lock()
         latestData = data
         latestTimestamp = timestampNanoseconds
         latestSequence = sequence
         latestWorldFrame = isWorldFrame
+        latestRgb = hasRgb
         hasSnapshot = true
         lock.unlock()
 
@@ -51,7 +55,8 @@ final class PointCloudModel: ObservableObject, @unchecked Sendable {
             pointCount: latestData.count / AtlasWireProtocol.pointSize,
             sequence: latestSequence,
             timestampNanoseconds: latestTimestamp,
-            isWorldFrame: latestWorldFrame
+            isWorldFrame: latestWorldFrame,
+            hasRgb: latestRgb
         )
     }
 

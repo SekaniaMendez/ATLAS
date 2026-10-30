@@ -34,6 +34,20 @@ void append_header(std::vector<std::byte>& output, const MessageHeader& header) 
 
 }  // namespace
 
+std::vector<std::byte> encode_source_hello(StreamSourceKind source, const uint32_t sequence) {
+  if (source != StreamSourceKind::LiveLidar && source != StreamSourceKind::Recorded)
+    source = StreamSourceKind::Unknown;
+  std::vector<std::byte> output;
+  output.reserve(kHeaderSize + kSourceHelloSize);
+  append_header(output, {.type = MessageType::Hello,
+                         .payload_size = static_cast<uint32_t>(kSourceHelloSize),
+                         .sequence = sequence, .element_count = 1});
+  append_integer(output, kSourceHelloVersion);
+  append_integer(output, static_cast<uint8_t>(source));
+  append_integer(output, uint8_t{0});
+  return output;
+}
+
 std::vector<std::byte> encode_point_cloud(const std::span<const atlas::sensors::LidarPoint> points,
                                           const uint32_t sequence, const uint64_t timestamp_ns,
                                           const uint32_t flags) {
@@ -56,9 +70,14 @@ std::vector<std::byte> encode_point_cloud(const std::span<const atlas::sensors::
     append_float(output, point.x_m);
     append_float(output, point.y_m);
     append_float(output, point.z_m);
-    output.push_back(static_cast<std::byte>(point.reflectivity));
-    output.push_back(static_cast<std::byte>(point.tag));
-    append_integer<uint16_t>(output, 0);
+    if ((flags & kPointCloudRgb) && point.has_color) {
+      for (auto value : point.rgb) output.push_back(std::byte(value));
+      output.push_back(std::byte{1});
+    } else {
+      output.push_back(static_cast<std::byte>(point.reflectivity));
+      output.push_back((flags & kPointCloudRgb) ? std::byte{0} : std::byte(point.tag));
+      append_integer<uint16_t>(output, 0);
+    }
   }
   return output;
 }

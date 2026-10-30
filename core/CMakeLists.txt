@@ -10,6 +10,9 @@ set(ATLAS_CORE_SOURCES
   slam/src/SparseVoxelMap.cpp
   slam/src/VoxelRegistration.cpp
   slam/src/VoxelSlamEngine.cpp
+  slam/src/TemporalCanvas.cpp
+  slam/src/CameraColorizer.cpp
+  geometry/src/LiveGeometry.cpp
   storage/src/Capture.cpp
   storage/src/CaptureCodec.cpp
   storage/src/VoxelMapArchive.cpp
@@ -37,6 +40,7 @@ target_include_directories(atlas_core
     ${CMAKE_CURRENT_SOURCE_DIR}/gnss/include
     ${CMAKE_CURRENT_SOURCE_DIR}/timesync/include
     ${CMAKE_CURRENT_SOURCE_DIR}/slam/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/geometry/include
     ${CMAKE_CURRENT_SOURCE_DIR}/storage/include
 )
 

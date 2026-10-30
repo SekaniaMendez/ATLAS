@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -21,6 +22,7 @@ struct MapPoint {
   uint8_t reflectivity = 0;
   std::array<uint8_t, 3> rgb{0, 0, 0};
   bool has_color = false;
+  uint64_t color_timestamp_ns = 0; // runtime evidence only; archive retains RGB
 };
 
 struct VoxelKey {
@@ -76,6 +78,7 @@ struct VoxelNeighbor {
 struct BlockChange {
   BlockKey key;
   uint64_t revision = 0;
+  bool removed = false;
 };
 
 /// Single-consumer notification batch. No geometry is copied. On reset,
@@ -105,8 +108,8 @@ struct VoxelMapMemoryStats {
 /// Missing cells are unknown, not confirmed free space.
 ///
 /// Single-threaded: externally synchronize all reads/writes or copy a snapshot.
-/// Voxel/block pointers survive insertions and hash rehashing, but not clear()
-/// or destruction. Samples can change on every insertion. No sensor integration,
+/// Voxel/block pointers survive insertions and hash rehashing, but not erasure of
+/// their block, clear() or destruction. Samples can change on mutation. No sensor integration,
 /// surface fitting, persistence, eviction or GNSS projection is performed here.
 class SparseVoxelMap {
  public:
@@ -128,6 +131,12 @@ class SparseVoxelMap {
   [[nodiscard]] MapPoint voxel_center(const VoxelKey& key) const noexcept;
 
   VoxelInsertResult insert(const MapPoint& point);
+  /// Return a cell to unknown, preserving the grid and all other cells.
+  /// Reclaims empty blocks and emits a removal notification. Missing cells are a no-op.
+  bool erase(const VoxelKey& key);
+  /// Remove only matching samples. A partial removal restarts this cell's
+  /// observation count from its surviving samples (historical attribution is unknown).
+  size_t erase_samples(const VoxelKey& key, const std::function<bool(const MapPoint&)>& predicate);
   [[nodiscard]] const Voxel* find(const VoxelKey& key) const noexcept;
   [[nodiscard]] const Voxel* find_at(const MapPoint& point) const noexcept;
   [[nodiscard]] const VoxelBlock* find_block(const BlockKey& key) const noexcept;
@@ -140,6 +149,7 @@ class SparseVoxelMap {
 
   [[nodiscard]] size_t block_count() const noexcept { return blocks_.size(); }
   [[nodiscard]] size_t voxel_count() const noexcept { return voxel_count_; }
+  /// Sum of observation counts still represented by the retained cells, not lifetime input.
   [[nodiscard]] uint64_t accepted_hit_count() const noexcept { return accepted_hit_count_; }
   [[nodiscard]] uint64_t revision() const noexcept { return revision_; }
   /// Drains deduplicated notifications. Consumers read blocks under the same
@@ -154,9 +164,11 @@ class SparseVoxelMap {
  private:
   friend class atlas::storage::VoxelMapArchive;
   void require_revision_capacity() const;
+  void replace_samples(const VoxelKey& key, std::vector<MapPoint> samples);
   SparseVoxelMapConfig config_;
   Storage blocks_;
   std::vector<BlockKey> pending_blocks_;
+  std::unordered_map<BlockKey, uint64_t, BlockKeyHash> removed_blocks_;
   size_t voxel_count_ = 0;
   uint64_t accepted_hit_count_ = 0;
   uint64_t revision_ = 0;

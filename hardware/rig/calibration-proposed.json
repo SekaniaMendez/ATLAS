@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "id": "iphone14pro-mid360-upright-v0",
+      "display_name": "iPhone 14 Pro",
+      "device_identifiers": [
+        "iPhone15,2"
+      ],
+      "dimensions_mm": {
+        "height": 147.5,
+        "width": 71.5,
+        "thickness": 7.85
+      },
+      "lidar_to_camera": {
+        "translation_m": [
+          0.075,
+          -0.025000003814697264,
+          -0.030999990463256837
+        ],
+        "rotation_matrix_row_major": [
+          7.549790126404332e-08,
+          -8.470329472543003e-22,
+          -1.0,
+          -1.5099580252808664e-07,
+          -1.0,
+          -1.1399866612488412e-14,
+          -1.0,
+          1.5099580252808664e-07,
+          -7.549790126404332e-08
+        ]
+      },
+      "camera_lens": "wide",
+      "verified": false,
+      "notes": "Propuesta desde Blender; medir y validar reproyección antes de marcar verified."
+    }
+  ]
+}

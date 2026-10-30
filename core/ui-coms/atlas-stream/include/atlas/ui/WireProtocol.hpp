@@ -3,6 +3,7 @@
 #include <atlas/sensors/LidarFrame.hpp>
 #include <atlas/sensors/SensorWarning.hpp>
 #include <atlas/ui/wire_protocol_config.hpp>
+#include <atlas/ui/ui_stream_server_config.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -16,7 +17,10 @@ inline constexpr uint16_t kProtocolVersion = 1;
 inline constexpr size_t kHeaderSize = 32;
 inline constexpr size_t kPointSize = 16;
 inline constexpr size_t kSensorWarningSize = 12;
+inline constexpr uint16_t kSourceHelloVersion = 1;
+inline constexpr size_t kSourceHelloSize = 4;
 /// PointCloud flags only; other message types have their own flag semantics.
+inline constexpr uint32_t kPointCloudRgb = 1U << 1U; // xyz + RGB + validity byte
 inline constexpr uint32_t kPointCloudWorldFrame = 1U << 0U;
 /// SensorStatus is a reserved, ignored type in legacy viewers. A subtype keeps
 /// SLAM telemetry compatible with those clients without using warning banners.
@@ -63,5 +67,8 @@ struct MessageHeader {
     const atlas::sensors::SensorWarning& warning, uint32_t sequence);
 
 [[nodiscard]] std::vector<std::byte> encode_slam_status(const SlamStatus& status, uint32_t sequence);
+
+/// Versioned Hello: u16 version, u8 source kind, u8 reserved (zero).
+[[nodiscard]] std::vector<std::byte> encode_source_hello(StreamSourceKind source, uint32_t sequence);
 
 }  // namespace atlas::ui::wire

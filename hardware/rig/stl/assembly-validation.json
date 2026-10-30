@@ -1,0 +1,620 @@
+{
+  "units": "mm",
+  "volume_tolerance_mm3": 0.01,
+  "checks": [
+    {
+      "check": "Parts: 01 Cuerpo lateral / 02 Tapa abrazadera",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Parts: 01 Cuerpo lateral / 02 Tapa abrazadera.001",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Parts: 01 Cuerpo lateral / 03 Cuna iPhone 14 Pro",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Parts: 01 Cuerpo lateral / 04 Mordaza movil",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Parts: 02 Tapa abrazadera / 02 Tapa abrazadera.001",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Parts: 02 Tapa abrazadera / 03 Cuna iPhone 14 Pro",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Parts: 02 Tapa abrazadera / 04 Mordaza movil",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Parts: 02 Tapa abrazadera.001 / 03 Cuna iPhone 14 Pro",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Parts: 02 Tapa abrazadera.001 / 04 Mordaza movil",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Parts: 03 Cuna iPhone 14 Pro / 04 Mordaza movil",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral / CHECK_PHONE_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral / CHECK_LIDAR_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral / CHECK_M12_RESERVED",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera / CHECK_PHONE_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera / CHECK_LIDAR_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera / CHECK_M12_RESERVED",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera.001 / CHECK_PHONE_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera.001 / CHECK_LIDAR_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera.001 / CHECK_M12_RESERVED",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro / CHECK_PHONE_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro / CHECK_LIDAR_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro / CHECK_M12_RESERVED",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "04 Mordaza movil / CHECK_PHONE_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "04 Mordaza movil / CHECK_LIDAR_ENVELOPE",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "04 Mordaza movil / CHECK_M12_RESERVED",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro M4 shaft z=-52",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral M4 shaft z=-52",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro M4 surrounding support z=-52",
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral M4 surrounding support z=-52",
+      "pass": true
+    },
+    {
+      "check": "M4 shaft clearance and surrounding support",
+      "y_mm": 68.75,
+      "z_mm": -38.75,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro M4 shaft z=5",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral M4 shaft z=5",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro M4 surrounding support z=5",
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral M4 surrounding support z=5",
+      "pass": true
+    },
+    {
+      "check": "M4 shaft clearance and surrounding support",
+      "y_mm": 68.75,
+      "z_mm": 18.25,
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral / pole 30",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera / pole 30",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera.001 / pole 30",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro / pole 30",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "04 Mordaza movil / pole 30",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / pole z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 01 Cuerpo lateral z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 02 Tapa abrazadera z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 02 Tapa abrazadera.001 z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 03 Cuna iPhone 14 Pro z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 04 Mordaza movil z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / pole z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 01 Cuerpo lateral z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 02 Tapa abrazadera z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 02 Tapa abrazadera.001 z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 03 Cuna iPhone 14 Pro z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 04 Mordaza movil z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / pole z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 01 Cuerpo lateral z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 02 Tapa abrazadera z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 02 Tapa abrazadera.001 z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 03 Cuna iPhone 14 Pro z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 04 Mordaza movil z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / pole z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 01 Cuerpo lateral z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 02 Tapa abrazadera z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 02 Tapa abrazadera.001 z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 03 Cuna iPhone 14 Pro z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 30 / 04 Mordaza movil z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral / pole 35",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera / pole 35",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera.001 / pole 35",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro / pole 35",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "04 Mordaza movil / pole 35",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / pole z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 01 Cuerpo lateral z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 02 Tapa abrazadera z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 02 Tapa abrazadera.001 z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 03 Cuna iPhone 14 Pro z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 04 Mordaza movil z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / pole z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 01 Cuerpo lateral z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 02 Tapa abrazadera z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 02 Tapa abrazadera.001 z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 03 Cuna iPhone 14 Pro z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 04 Mordaza movil z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / pole z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 01 Cuerpo lateral z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 02 Tapa abrazadera z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 02 Tapa abrazadera.001 z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 03 Cuna iPhone 14 Pro z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 04 Mordaza movil z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / pole z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 01 Cuerpo lateral z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 02 Tapa abrazadera z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 02 Tapa abrazadera.001 z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 03 Cuna iPhone 14 Pro z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 35 / 04 Mordaza movil z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "01 Cuerpo lateral / pole 40",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera / pole 40",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "02 Tapa abrazadera.001 / pole 40",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "03 Cuna iPhone 14 Pro / pole 40",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "04 Mordaza movil / pole 40",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / pole z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 01 Cuerpo lateral z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 02 Tapa abrazadera z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 02 Tapa abrazadera.001 z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 03 Cuna iPhone 14 Pro z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 04 Mordaza movil z=-95 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / pole z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 01 Cuerpo lateral z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 02 Tapa abrazadera z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 02 Tapa abrazadera.001 z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 03 Cuna iPhone 14 Pro z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 04 Mordaza movil z=-95 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / pole z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 01 Cuerpo lateral z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 02 Tapa abrazadera z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 02 Tapa abrazadera.001 z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 03 Cuna iPhone 14 Pro z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 04 Mordaza movil z=-145 rotation=0",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / pole z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 01 Cuerpo lateral z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 02 Tapa abrazadera z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 02 Tapa abrazadera.001 z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 03 Cuna iPhone 14 Pro z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    },
+    {
+      "check": "Liner 40 / 04 Mordaza movil z=-145 rotation=3.141592653589793",
+      "intersection_mm3": 0.0,
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "limitations": [
+    "M12 clearance uses a reserved straight cylindrical envelope Ø20×50 mm, not a measured plug/cable bend radius.",
+    "The phone and pole occlude LiDAR azimuth sectors; this check does not certify unobstructed FOV.",
+    "Geometry checks do not validate printed tolerances, stiffness, creep, clamp friction or loads."
+  ]
+}

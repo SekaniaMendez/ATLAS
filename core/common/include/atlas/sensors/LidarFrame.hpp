@@ -2,6 +2,7 @@
 
 #include <atlas/timesync/SensorTimestamp.hpp>
 #include <cstdint>
+#include <array>
 #include <vector>
 
 namespace atlas::sensors {
@@ -13,6 +14,9 @@ struct LidarPoint {
   uint32_t offset_ns = 0;
   uint8_t reflectivity = 0;
   uint8_t tag = 0;
+  std::array<uint8_t, 3> rgb{};
+  bool has_color = false;
+  uint64_t color_timestamp_ns = 0; // original camera exposure, for independent evidence
 };
 
 struct LidarFrame {

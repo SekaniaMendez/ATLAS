@@ -104,17 +104,27 @@ class ImuTracker {
         static_cast<size_t>(samples_.end() - begin) < config_.minimum_initialization_imu_samples) return;
     Eigen::Vector3d gyro = Eigen::Vector3d::Zero(), accel = Eigen::Vector3d::Zero();
     for (auto it = begin; it != samples_.end(); ++it) {
-      if (it->gyro.norm() > config_.stationary_gyro_limit_rad_s ||
-          std::abs(it->accel.norm() - config_.gravity_m_s2) >
+      if (std::abs(it->accel.norm() - config_.gravity_m_s2) >
               config_.stationary_accel_tolerance_m_s2 ||
           (it != begin && it->time_ns - std::prev(it)->time_ns > config_.maximum_imu_gap_ns)) return;
       gyro += it->gyro; accel += it->accel;
     }
     const double count = static_cast<double>(samples_.end() - begin);
     gyro /= count; accel /= count;
-    double variance = 0;
-    for (auto it = begin; it != samples_.end(); ++it) variance += (it->accel - accel).squaredNorm();
-    if (std::sqrt(variance / count) > config_.stationary_accel_stddev_m_s2 ||
+    // A stable nonzero gyro offset is what this window estimates. Gate its
+    // magnitude separately from motion/noise, so bias does not reject itself.
+    // The absolute bound still rejects strong constant rotation, which has no
+    // variance and could otherwise be absorbed into the bias estimate.
+    if (gyro.norm() > config_.maximum_initialization_gyro_bias_rad_s) return;
+    double gyro_variance = 0, accel_variance = 0;
+    for (auto it = begin; it != samples_.end(); ++it) {
+      const Eigen::Vector3d residual = it->gyro - gyro;
+      if (residual.norm() > config_.stationary_gyro_limit_rad_s) return;
+      gyro_variance += residual.squaredNorm();
+      accel_variance += (it->accel - accel).squaredNorm();
+    }
+    if (std::sqrt(gyro_variance / count) > config_.stationary_gyro_stddev_rad_s ||
+        std::sqrt(accel_variance / count) > config_.stationary_accel_stddev_m_s2 ||
         accel.norm() < config_.gravity_m_s2 * 0.5) return;
     bias_ = gyro;
     initial_rotation_ = Eigen::Quaterniond::FromTwoVectors(accel, Eigen::Vector3d::UnitZ()).normalized();

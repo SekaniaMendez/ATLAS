@@ -3,11 +3,18 @@ import SwiftUI
 
 struct MetalPointCloudView: UIViewRepresentable {
     let model: PointCloudModel
+    let geometry: LiveGeometryModel
     let camera: CameraSessionController
     let calibration: CalibrationStore
+    let showPoints: Bool
+    let showSurfaces: Bool
+    let showAxes: Bool
+    let showCeiling: Bool
+    let ceilingCutHeightM: Float?
+    let topViewRequest: Int
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(model: model, camera: camera, calibration: calibration)
+        Coordinator(model: model, geometry: geometry, camera: camera, calibration: calibration)
     }
 
     func makeUIView(context: Context) -> MTKView {
@@ -20,6 +27,7 @@ struct MetalPointCloudView: UIViewRepresentable {
         view.isPaused = false
 
         context.coordinator.attach(to: view)
+        updateRenderer(context.coordinator)
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pan(_:)))
         let pinch = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pinch(_:)))
         view.addGestureRecognizer(pan)
@@ -27,20 +35,32 @@ struct MetalPointCloudView: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: MTKView, context: Context) {}
+    func updateUIView(_ uiView: MTKView, context: Context) {
+        updateRenderer(context.coordinator)
+    }
+
+    private func updateRenderer(_ coordinator: Coordinator) {
+        coordinator.setVisibility(points: showPoints, surfaces: showSurfaces, axes: showAxes,
+                                  ceiling: showCeiling, ceilingCutHeightM: ceilingCutHeightM)
+        coordinator.consumeTopViewRequest(topViewRequest)
+    }
 
     final class Coordinator: NSObject {
         private let model: PointCloudModel
+        private let geometry: LiveGeometryModel
         private let camera: CameraSessionController
         private let calibration: CalibrationStore
         private var renderer: PointCloudRenderer?
+        private var lastTopViewRequest = 0
 
         init(
             model: PointCloudModel,
+            geometry: LiveGeometryModel,
             camera: CameraSessionController,
             calibration: CalibrationStore
         ) {
             self.model = model
+            self.geometry = geometry
             self.camera = camera
             self.calibration = calibration
         }
@@ -49,10 +69,23 @@ struct MetalPointCloudView: UIViewRepresentable {
             renderer = PointCloudRenderer(
                 view: view,
                 model: model,
+                geometry: geometry,
                 camera: camera,
                 calibration: calibration
             )
             view.delegate = renderer
+        }
+
+        func setVisibility(points: Bool, surfaces: Bool, axes: Bool,
+                           ceiling: Bool, ceilingCutHeightM: Float?) {
+            renderer?.setVisibility(points: points, surfaces: surfaces, axes: axes,
+                                    ceiling: ceiling, ceilingCutHeightM: ceilingCutHeightM)
+        }
+
+        func consumeTopViewRequest(_ value: Int) {
+            guard value != lastTopViewRequest else { return }
+            lastTopViewRequest = value
+            renderer?.showTopView()
         }
 
         @objc func pan(_ recognizer: UIPanGestureRecognizer) {

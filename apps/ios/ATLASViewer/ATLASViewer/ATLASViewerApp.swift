@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct ATLASViewerApp: App {
     @StateObject private var pointCloud: PointCloudModel
+    @StateObject private var geometry: LiveGeometryModel
     @StateObject private var connection: AtlasConnection
     @StateObject private var calibration: CalibrationStore
     @StateObject private var camera: CameraSessionController
@@ -10,9 +11,11 @@ struct ATLASViewerApp: App {
 
     init() {
         let model = PointCloudModel()
+        let geometryModel = LiveGeometryModel()
         model.loadDemoCloud()
         _pointCloud = StateObject(wrappedValue: model)
-        _connection = StateObject(wrappedValue: AtlasConnection(pointCloud: model))
+        _geometry = StateObject(wrappedValue: geometryModel)
+        _connection = StateObject(wrappedValue: AtlasConnection(pointCloud: model, geometry: geometryModel))
         _calibration = StateObject(wrappedValue: CalibrationStore())
         let cameraSession = CameraSessionController()
         _camera = StateObject(wrappedValue: cameraSession)
@@ -23,6 +26,7 @@ struct ATLASViewerApp: App {
         WindowGroup {
             ContentView(
                 pointCloud: pointCloud,
+                geometry: geometry,
                 connection: connection,
                 calibration: calibration,
                 camera: camera,

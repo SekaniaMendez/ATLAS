@@ -14,7 +14,7 @@ class SensorPreprocessor::Impl {
  public:
   Impl(atlas::sensors::SensorDataBus& output, const SensorPreprocessorConfig& config)
       : output_(output),
-        lidar_filter_(config.minimum_lidar_distance_m),
+        lidar_filter_(config.minimum_lidar_distance_m, config.filter_mid360_low_confidence_tags),
         imu_monitor_({
             .abrupt_jerk_threshold_m_s3 = config.abrupt_jerk_threshold_m_s3,
             .abrupt_angular_speed_threshold_rad_s = config.abrupt_angular_speed_threshold_rad_s,
@@ -26,6 +26,7 @@ class SensorPreprocessor::Impl {
     lidar_points_received_.fetch_add(frame.points.size(), std::memory_order_relaxed);
     auto result = lidar_filter_.filter(frame);
     lidar_points_rejected_.fetch_add(result.rejected_points, std::memory_order_relaxed);
+    lidar_points_rejected_by_tag_.fetch_add(result.rejected_by_tag, std::memory_order_relaxed);
     output_.publish(result.frame);
   }
 
@@ -64,6 +65,7 @@ class SensorPreprocessor::Impl {
     return {
         .lidar_points_received = lidar_points_received_.load(),
         .lidar_points_rejected = lidar_points_rejected_.load(),
+        .lidar_points_rejected_by_tag = lidar_points_rejected_by_tag_.load(),
         .imu_samples_received = imu_samples_received_.load(),
         .warnings_published = warnings_published_.load(),
     };
@@ -81,6 +83,7 @@ class SensorPreprocessor::Impl {
   std::mutex monitor_mutex_;
   std::atomic_uint64_t lidar_points_received_{0};
   std::atomic_uint64_t lidar_points_rejected_{0};
+  std::atomic_uint64_t lidar_points_rejected_by_tag_{0};
   std::atomic_uint64_t imu_samples_received_{0};
   std::atomic_uint64_t warnings_published_{0};
 };

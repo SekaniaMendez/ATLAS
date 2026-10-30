@@ -12,6 +12,8 @@ struct LidarToCameraTransform: Codable {
 
     var isValid: Bool {
         translationM.count == 3 && rotationMatrixRowMajor.count == 9
+            && translationM.allSatisfy { $0.isFinite }
+            && rotationMatrixRowMajor.allSatisfy { $0.isFinite }
     }
 }
 
@@ -23,6 +25,7 @@ struct DeviceCalibrationProfile: Codable, Identifiable {
     let lidarToCamera: LidarToCameraTransform
     let verified: Bool
     let notes: String
+    var cameraLens: String? = nil
 }
 
 private struct DeviceCalibrationCatalog: Codable {

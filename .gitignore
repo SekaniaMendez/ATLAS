@@ -4,6 +4,8 @@ cmake-build-*/
 out/
 bin/
 lib/
+/output/
+__pycache__/
 
 # OS / IDE
 .DS_Store

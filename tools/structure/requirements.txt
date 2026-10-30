@@ -1,0 +1,5 @@
+# CPU geometry environment; Python 3.12.
+open3d==0.19.0
+numpy==2.2.6
+scipy==1.18.1
+shapely==2.1.2

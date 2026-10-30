@@ -198,8 +198,21 @@ Changing a C++ default requires rebuilding the consuming application.
 - [x] Local voxel-hash mapping prototype with gyro-assisted odometry and per-point
   motion compensation ([build, live use, replay and limits](docs/SLAM_PROTOTYPE.md))
 - [ ] Full LiDAR–inertial estimator, loop closure and global relocalization
+- [x] Temporal canvas confirmation and selective removal of visibility-inconsistent
+  geometry, with preservation of occluded surfaces (experimental; no semantic motion recognition)
 - [x] Sensor-independent sparse voxel canvas ([API and validation](docs/SPARSE_VOXEL_MAP.md))
+- [x] Offline bounded-plane extraction, local reference frames and compact GLB geometry;
+  automatic reconstruction after capture with coverage checks and a portable 3D viewer
+  ([usage, validation and limits](docs/STRUCTURAL_GEOMETRY.md))
+- [x] Live measured-plane meshes and reference axes in the iPhone viewer, with
+  background extraction and replacement when the map changes
+- [x] Geometric floor/wall/ceiling proposals, object candidates and human labeling
+  of recorded captures; iPhone/iPad annotation workspace and versioned NPZ export
+  ([start with `./startLabeling.sh --lan`](docs/SEMANTIC_LABELING.md))
+- [ ] Persistent structural identities across scans, semantic room recognition and complete CAD/BIM reconstruction
 - [x] Raw capture/replay, paged map storage and temporal synchronization ([usage and limits](docs/CAPTURE_AND_SYNCHRONIZATION.md))
+- [x] Read-only Z1 GNSS reception over Wi-Fi, raw/CSV recording and checked RTK/GPS/UTC
+  telemetry ([run `./startGnss.sh --seconds 60`](docs/GNSS_Z1.md)); map-anchor timing and mounting calibration remain pending
 - [ ] GNSS fusion & georeferencing
 - [ ] AI perception modules
 - [x] Initial real-time visualization pipeline
@@ -236,3 +249,6 @@ ATLAS is built on the idea that:
 ATLAS is licensed under the repository license.
 
 Some submodules (e.g., vendor SDKs) are subject to their own licenses.
+
+- [Fusión cámara–LiDAR como complemento de movimiento](docs/CAMERA_LIDAR_FUSION.md).
+- [Rig ajustable de Blender: iPhone 14 Pro + MID-360 + bastón](hardware/rig/README.md).

@@ -7,7 +7,7 @@ target_compile_features(atlas_sensor_data_bus_test PRIVATE cxx_std_20)
 
 add_test(NAME atlas_sensor_data_bus_test COMMAND atlas_sensor_data_bus_test)
 
-foreach(slam_test VoxelRegistration VoxelSlam)
+foreach(slam_test VoxelRegistration VoxelSlam TemporalCanvas CameraFusion ImuTracker LiveGeometry)
   add_executable(atlas_${slam_test}_test ${slam_test}Test.cpp)
   target_link_libraries(atlas_${slam_test}_test PRIVATE atlas_core Eigen3::Eigen)
   target_include_directories(atlas_${slam_test}_test PRIVATE ${PROJECT_SOURCE_DIR}/core/slam/src)
@@ -23,6 +23,12 @@ add_executable(atlas_sensor_preprocessor_test
 
 target_link_libraries(atlas_sensor_preprocessor_test PRIVATE atlas_core)
 target_compile_features(atlas_sensor_preprocessor_test PRIVATE cxx_std_20)
+# Keep the preprocessing and tag-policy assertions active in Release too.
+if(MSVC)
+  target_compile_options(atlas_sensor_preprocessor_test PRIVATE /UNDEBUG)
+else()
+  target_compile_options(atlas_sensor_preprocessor_test PRIVATE -UNDEBUG)
+endif()
 
 add_test(NAME atlas_sensor_preprocessor_test COMMAND atlas_sensor_preprocessor_test)
 
@@ -70,6 +76,19 @@ else()
 endif()
 
 if(TARGET atlas_ui_stream)
+  foreach(geometry_test GeometryWire LiveGeometryWorker)
+    add_executable(atlas_${geometry_test}_test ${geometry_test}Test.cpp)
+    target_link_libraries(atlas_${geometry_test}_test PRIVATE atlas_ui_stream)
+    target_include_directories(atlas_${geometry_test}_test PRIVATE ${PROJECT_SOURCE_DIR}/core/ui-coms/atlas-stream/src)
+    add_test(NAME atlas_${geometry_test}_test COMMAND atlas_${geometry_test}_test)
+    if(NOT MSVC)
+      target_compile_options(atlas_${geometry_test}_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+  endforeach()
+  add_executable(atlas_CameraWire_test CameraWireTest.cpp)
+  target_link_libraries(atlas_CameraWire_test PRIVATE atlas_ui_stream)
+  target_include_directories(atlas_CameraWire_test PRIVATE ${PROJECT_SOURCE_DIR}/core/ui-coms/atlas-stream/src)
+  add_test(NAME atlas_CameraWire_test COMMAND atlas_CameraWire_test)
   add_executable(atlas_ui_wire_protocol_test
     UiWireProtocolTest.cpp
   )

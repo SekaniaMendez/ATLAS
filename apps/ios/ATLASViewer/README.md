@@ -4,8 +4,8 @@ Native SwiftUI + Metal viewer for point clouds processed by ATLAS on the Mac.
 The app discovers the Mac with Bonjour (`_atlas._tcp`) and also supports a
 manual IPv4 address. The binary TCP stream uses port `47777`.
 
-For sensor-frame LiDAR on a physical iPhone, the viewer starts ARKit and offers
-provisional camera RGB or a calibration overlay using the selected rigid
+For sensor-frame LiDAR on a physical iPhone, enabling the camera in Settings
+starts ARKit and offers provisional camera RGB or a calibration overlay using the selected rigid
 LiDAR-to-camera profile. SLAM maps use an orbital view on both iPhone and
 Simulator. Their colors represent reflectivity, not camera RGB; the phone does
 not need to be mounted or aligned with the LiDAR to inspect the map.
@@ -22,8 +22,8 @@ cmake --build --preset mac-debug
 
 Then open `ATLASViewer.xcodeproj` in Xcode, select your development team and
 your connected iPhone, and press Run. Accept the local-network permission. The
-app should discover the demo automatically. Tap **Ocultar cámara** to inspect
-the animated sphere in the orbital view on a physical iPhone.
+app should discover the demo automatically. The camera starts disabled, so the
+animated sphere can be inspected in the orbital view on a physical iPhone.
 
 If Bonjour discovery does not find the Mac, enter the Mac's Wi-Fi IPv4 address
 in the app and tap **Conectar**. Both devices must be on the same local network,
@@ -73,6 +73,36 @@ overlay controls are disabled for world coordinates; camera recording remains
 independent. This is a local metric map, not a georeferenced or RGB map. See the
 [SLAM prototype guide](../../../docs/SLAM_PROTOTYPE.md) for recording, replay,
 exports and current tracking limitations.
+
+### Live surfaces and reference axes
+
+The updated Mac server also extracts measured plane meshes on a separate worker
+about once per second. ATLASViewer draws them in the same orbital map frame,
+with a distinct color per surface and local X/Y/Z axes in red/green/blue. Use
+**Puntos / Superficies / Ejes** to choose the visible layers. The geometry indicator
+shows surface and triangle counts and the age of the most recent replacement.
+
+This is a bounded planar preview: curves and unsupported details remain visible
+as points. The final offline reconstruction includes finer residual surfaces.
+No camera overlay or geographic frame is inferred from these local axes. IDs and
+axes are recomputed per snapshot and are not persistent structural identities.
+
+An empty map, tracking loss or reconnect clears the geometry. A completed old
+calculation cannot restore a cleared snapshot. After three seconds without a new
+geometry update the meshes disappear; repeating a frozen map timestamp does not
+refresh them. Queues retain only the latest pending map and geometry message.
+
+To test from saved measurements without starting the Livox SDK:
+
+```sh
+./build/mac-release/apps/atlas_geometry_preview \
+  --input output/20261028-172733/mapa.ply
+```
+
+Connect the app to the Mac as usual. The preview simulates advancing capture
+timestamps; `--exercise-clears` adds empty/lost/recovery transitions. It leaves
+the original file untouched. See [structural geometry](../../../docs/STRUCTURAL_GEOMETRY.md)
+for limits, installation and reproducible tests.
 
 ## Controls
 
@@ -142,3 +172,89 @@ severity, measured value, and threshold. The viewer currently presents these
 as a temporary banner. Abrupt IMU acceleration/rotation warnings are available
 immediately. The protocol supports the `2.5 m/s` warning, but the current SLAM
 engine does not yet feed its velocity estimate into that warning path.
+
+Geometry uses `SensorStatus` type `2`, subtype/header flags `2`; older viewers
+ignore this subtype without disrupting their point stream. The header count is
+the surface count, and timestamp identifies the source SLAM map. Payload v1 is:
+
+| Offset | Type | Meaning |
+| ---: | --- | --- |
+| 0 | uint16 | Geometry version, 1 |
+| 2 | uint16 | Bit 0 complete replacement (required), bit 1 budget-limited |
+| 4, 8, 12 | uint32 × 3 | Surface, vertex and index counts |
+| 16 | uint64 | Source revision, increasing for replacements and clears |
+| 24 | uint32 | Input point count |
+| 28 | float32 | Extraction time in milliseconds |
+
+Next are 84-byte surface records: ID, kind (1 horizontal, 2 vertical, 3 inclined,
+4 reserved freeform), origin XYZ, 9 basis floats in column order, area, fit RMS,
+support count, first vertex, vertex count, first index, index count. Then come all
+packed XYZ Float32 vertices **in map coordinates** and UInt32 indices **local to
+each surface's vertex range**. All values are little-endian. Maximum counts are
+32 surfaces / 30,000 vertices / 90,000 indices; the decoder validates payload
+lengths, finite values, right-handed orthonormal frames and triangle indices
+before replacing the model. Zero surfaces/vertices/indices is a valid clear.
+
+## Flujo actual: Mapa y Etiquetar
+
+La app tiene dos pestañas. **Mapa** muestra el SLAM y sus capas de puntos,
+superficies y ejes; conexión, calibración y grabación están en **Ajustes**.
+La cámara ya no arranca al abrir la app: se activa expresamente desde
+**Mapa → Ajustes → Cámara**. Ver el mapa y etiquetar no requiere cámara.
+
+**Etiquetar** abre el editor de capturas guardadas en la Mac. Desde la raíz del
+proyecto ejecuta:
+
+```sh
+./startLabeling.sh --lan
+```
+
+Con ambos dispositivos en la misma red, pega el enlace completo de emparejamiento
+que muestra el servidor en **Etiquetar → Conectar con la Mac**. Usa el puerto
+`8770` de forma predeterminada, independiente del mapa TCP `47777`. Bonjour
+`_atlas-labels._tcp` encuentra la dirección; la clave del primer emparejamiento
+va en el enlace `#token=…` y la app la guarda en Keychain.
+
+Si la Mac usa internet compartido del teléfono, el enlace debe llevar la IP de
+la **Mac** en esa conexión, no la puerta de enlace del teléfono ni la dirección
+Ethernet del LiDAR. El enlace manual permite conectar cuando Bonjour no aparece.
+La configuración contempla este caso, pero la prueba física completa con internet
+compartido sigue pendiente.
+
+Selecciona grupos, revisa las propuestas de suelo/pared/techo y asigna categorías
+de objetos. Varias selecciones etiquetadas juntas comparten una instancia. Las
+etiquetas se guardan en la Mac; exportar produce NPZ + JSON con objetivos humanos
+y mantiene `-1` en los puntos sin etiqueta. Esta etapa prepara datos y **no entrena
+todavía una red neuronal**. Los originales de `output/` permanecen intactos.
+
+En **Etiquetar**, las capas separan suelo, paredes, techo, objetos y puntos sin
+agrupar; el techo está oculto al abrir una captura. El visor permanece visible y
+las herramientas se desplazan en su propio panel. Apple Pencil selecciona puntos;
+los dedos navegan en **Girar / elegir grupo**. **Pintar puntos** permite seleccionar
+también con ratón o dedo. El borrador admite borrar, deshacer trazos y crear un
+objeto etiquetado nuevo. Recargar desde la cabecera de la app pide confirmación
+si quedan puntos seleccionados sin guardar.
+
+**Nueva categoría**, junto al selector **Categoría**, permite añadir un nombre de
+hasta 80 caracteres desde el iPad o iPhone. Al crearla se selecciona para el próximo
+guardado; todavía debes pulsar **Guardar etiqueta** o **Crear objeto etiquetado**.
+Un nombre repetido reutiliza la categoría existente. El catálogo se comparte entre
+capturas y se actualiza al abrir el formulario, conservando el borrador y las notas.
+
+Respalda juntos `output/categories.json` y `output/.categories.json.identity`,
+además de las anotaciones, con el servidor detenido. Los IDs de categoría son
+estables dentro de ese catálogo; cada exportación guarda su propia copia fija de
+la taxonomía en el JSON. Añadir clases después no modifica exportaciones anteriores
+ni inicia un entrenamiento.
+
+El 29 de octubre de 2026, la nueva app universal se compiló e instaló en el
+**iPhone 14 Pro** y el **iPad Air 5 con M1**, con Modo de desarrollador activado.
+El iPad se abrió y emparejó con el servidor local; el usuario confirmó la captura
+y los grupos visibles. La apertura remota del iPhone quedó pendiente de desbloquear
+su pantalla. En un dispositivo nuevo puede ser necesario confiar en el perfil en
+**Ajustes → General → VPN y gestión de dispositivos → perfil del desarrollador →
+Confiar** y permitir el acceso a la red local.
+
+Consulta [Etiquetado semántico](../../../docs/SEMANTIC_LABELING.md) para revisión,
+exportación, límites de los grupos y conservación de futuras capturas con
+`./startAtlas.sh --keep-source`.

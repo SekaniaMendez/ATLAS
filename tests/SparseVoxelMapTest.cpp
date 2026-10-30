@@ -225,6 +225,58 @@ void neighborhoods_and_reference_model() {
   }
 }
 
+void selective_erasure() {
+  SparseVoxelMap map({.voxel_size_m = 0.125, .max_samples_per_voxel = 3});
+  (void)map.take_changes();
+  const MapPoint foreground{.x_m = -0.10, .reflectivity = 10};
+  const MapPoint background{.x_m = -0.09, .reflectivity = 20};
+  (void)map.insert(foreground);
+  (void)map.insert(background);
+  const auto key = *map.voxel_key_for(foreground);
+  CHECK(map.erase_samples(key, [](const MapPoint& p) { return p.reflectivity == 10; }) == 1);
+  CHECK(map.find(key)->samples.size() == 1);
+  CHECK(map.find(key)->samples[0].reflectivity == 20);
+  CHECK(map.accepted_hit_count() == 1 && map.voxel_count() == 1);
+  auto changes = map.take_changes();
+  CHECK(changes.blocks.size() == 1 && !changes.blocks[0].removed && !changes.reset);
+  const auto revision = map.revision();
+  CHECK(!map.erase({100, 100, 100}));
+  CHECK(map.erase_samples(key, [](const MapPoint&) { return false; }) == 0);
+  CHECK(map.revision() == revision && map.take_changes().blocks.empty());
+  try {
+    map.erase_samples(key, [](const MapPoint&) -> bool { throw std::invalid_argument("predicate"); });
+    CHECK(false);
+  } catch (const std::invalid_argument&) {}
+  CHECK(map.revision() == revision && map.find(key)->samples.size() == 1);
+  CHECK(map.erase(key));
+  CHECK(map.find(key) == nullptr && map.block_count() == 0 && map.voxel_count() == 0);
+  CHECK(map.accepted_hit_count() == 0);
+  changes = map.take_changes();
+  CHECK(changes.blocks.size() == 1 && changes.blocks[0].removed && !changes.reset);
+  CHECK(changes.blocks[0].revision == revision + 1);
+  CHECK(map.config().voxel_size_m == 0.125);
+
+  // Recreate/delete/recreate before draining must emit one latest-state event.
+  (void)map.insert(foreground);
+  CHECK(map.erase(key));
+  (void)map.insert(background);
+  changes = map.take_changes();
+  CHECK(changes.blocks.size() == 1 && !changes.blocks[0].removed);
+  CHECK(changes.blocks[0].revision == map.revision());
+  CHECK(map.erase(key));
+  map.clear();
+  changes = map.take_changes();
+  CHECK(changes.reset && changes.blocks.empty());
+
+  // Deleting one cell leaves adjacent geometry and its counts unchanged.
+  (void)map.insert({.x_m = 0.01});
+  (void)map.insert({.x_m = 0.2});
+  CHECK(map.erase({0, 0, 0}));
+  CHECK(map.block_count() == 1 && map.voxel_count() == 1 && map.accepted_hit_count() == 1);
+  CHECK(map.find_at({.x_m = 0.2}) != nullptr);
+  CHECK(map.find_block({0, 0, 0})->occupied_voxel_count == 1);
+}
+
 }  // namespace
 
 int main() {
@@ -233,6 +285,7 @@ int main() {
     editable_bounds_and_errors();
     changes_and_recent_samples();
     neighborhoods_and_reference_model();
+    selective_erasure();
     std::cout << "SparseVoxelMap: coordinate, bounds, change, sample and reference checks passed\n";
     return 0;
   } catch (const std::exception& error) {

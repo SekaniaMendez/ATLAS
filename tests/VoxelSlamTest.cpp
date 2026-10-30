@@ -34,9 +34,11 @@ void check_exports(const VoxelSlamEngine& engine) {
   const auto map_path = temp.path / "map";
   const auto ply_path = temp.path / "map.ply";
   const auto trajectory_path = temp.path / "trajectory.csv";
+  const auto report_path = temp.path / "session.txt";
   engine.save_map(map_path);
   engine.export_ply(ply_path);
   engine.export_trajectory(trajectory_path);
+  engine.export_session_report(report_path);
   const auto loaded = atlas::storage::VoxelMapArchive::load(map_path);
   const auto stats = engine.stats();
   check(loaded.voxel_count() == stats.map_voxels &&
@@ -45,6 +47,7 @@ void check_exports(const VoxelSlamEngine& engine) {
   const auto ply = read_text(ply_path);
   const auto csv = read_text(trajectory_path);
   const auto session = read_text(map_path / "slam_session.txt");
+  check(read_text(report_path) == session, "standalone session metadata differs from archive metadata");
   check(session.find("georeferenced=false\n") != std::string::npos &&
             session.find("loop_closure=false\n") != std::string::npos,
         "export does not identify the local prototype's coordinate-frame limits");
@@ -57,6 +60,7 @@ void check_exports(const VoxelSlamEngine& engine) {
   rejects([&] { engine.save_map(map_path); });
   rejects([&] { engine.export_ply(ply_path); });
   rejects([&] { engine.export_trajectory(trajectory_path); });
+  rejects([&] { engine.export_session_report(report_path); });
   check(read_text(ply_path) == ply && read_text(trajectory_path) == csv,
         "rejected export overwrote prior artifacts");
   check(atlas::storage::VoxelMapArchive::load(map_path).voxel_count() == stats.map_voxels,
@@ -120,6 +124,9 @@ void moving_room_with_imu_and_deskew() {
   simulation.points_per_scan = 4200;
   simulation.yaw_rate_rad_s = 0.70;
   simulation.initial_roll_rad = 0.20;
+  // Measured stationary MID-360 offset: its norm exceeds the 0.03 rad/s
+  // residual-motion threshold but is not actual rotation.
+  simulation.gyro_bias_rad_s = {0.0296, -0.0117, 0.0168};
   SyntheticRoom room(simulation);
   VoxelSlamEngine engine;
   room.feed(engine);
@@ -244,6 +251,12 @@ void bounded_queue_and_invalid_packet_timing() {
   VoxelSlamConfig impossible_history;
   impossible_history.imu_initialization_ns = std::numeric_limits<uint64_t>::max();
   rejects([&] { VoxelSlamEngine engine(impossible_history); });
+  VoxelSlamConfig invalid_gyro_bias;
+  invalid_gyro_bias.maximum_initialization_gyro_bias_rad_s = 0;
+  rejects([&] { VoxelSlamEngine engine(invalid_gyro_bias); });
+  VoxelSlamConfig invalid_gyro_dispersion;
+  invalid_gyro_dispersion.stationary_gyro_stddev_rad_s = std::numeric_limits<double>::quiet_NaN();
+  rejects([&] { VoxelSlamEngine engine(invalid_gyro_dispersion); });
   VoxelSlamConfig tiny_queue;
   tiny_queue.use_imu = false;
   tiny_queue.max_queue_bytes = 1;
@@ -303,6 +316,68 @@ void missing_imu_coverage_rejects_scans() {
   check(after_gap.scans_accepted == before_gap.scans_accepted &&
             after_gap.map_voxels == before_gap.map_voxels,
         "uncovered scans contaminated the accepted canvas");
+  check(after_gap.state == atlas::slam::TrackingState::Lost,
+        "a prolonged IMU outage was hidden as a normal end of capture");
+}
+
+void short_final_imu_tail(bool internal_gap, bool previously_lost) {
+  SlamDemoConfig simulation;
+  simulation.scan_count = 8;
+  simulation.points_per_scan = 3500;
+  simulation.velocity_m_s = {0.0, 0.0, 0.0};
+  simulation.yaw_rate_rad_s = 0.0;
+  SyntheticRoom room(simulation);
+  VoxelSlamEngine engine;
+  room.feed(engine);
+  size_t tail_index = simulation.scan_count;
+  if (previously_lost) {
+    const uint64_t end = room.scan_start_ns(tail_index + 1);
+    for (uint64_t t = room.scan_start_ns(tail_index) + 10'000'000; t <= end + 5'000'000;
+         t += simulation.imu_period_ns) engine.on_imu_sample(room.imu_at(t));
+    auto unsupported = room.frame(tail_index++);
+    for (auto& point : unsupported.points) point.x_m += 20.0F;
+    engine.on_lidar_frame(unsupported);
+    engine.wait_until_idle();
+    check(engine.stats().state == atlas::slam::TrackingState::Lost,
+          "final-tail regression could not create a prior tracking failure");
+  }
+  const uint64_t begin = room.scan_start_ns(tail_index);
+  const uint64_t end = room.scan_start_ns(tail_index + 1);
+  for (uint64_t t = begin + 10'000'000; t < end; t += simulation.imu_period_ns) {
+    if (internal_gap && t >= begin + 30'000'000 && t < begin + 70'000'000) continue;
+    engine.on_imu_sample(room.imu_at(t));
+  }
+  engine.on_imu_sample(room.imu_at(end - 1'000'000));
+  engine.wait_until_idle();
+  const auto before = engine.stats();
+  check(before.scans_accepted > 0, "final-tail test did not initialize");
+  engine.on_lidar_frame(room.frame(tail_index));
+  auto partial = room.frame(tail_index + 1);
+  partial.duration_ns = 1'000'000;
+  for (auto& point : partial.points) point.offset_ns /= 100;
+  engine.on_lidar_frame(partial);
+  engine.wait_until_idle();
+  // At EOF both the full scan and its short successor are missing at most
+  // 2 ms of IMU. Neither may be integrated with invented rotational coverage.
+  engine.finish();
+  const auto after = engine.stats();
+  check(after.scans_processed == before.scans_processed + 2 &&
+            after.scans_rejected == before.scans_rejected + 2,
+        "EOF did not account for both uncovered tail scans");
+  check(after.scans_accepted == before.scans_accepted && after.map_voxels == before.map_voxels,
+        "uncovered final scans changed the accepted trajectory or map");
+  if (internal_gap) {
+    check(after.state == atlas::slam::TrackingState::Lost &&
+              after.message.find("Missing IMU coverage") != std::string::npos,
+          "EOF tail handling hid an internal IMU gap");
+  } else if (previously_lost) {
+    check(after.state == atlas::slam::TrackingState::Lost && after.message == before.message,
+          "discarding the final tail erased an earlier tracking failure");
+  } else {
+    check(after.state == atlas::slam::TrackingState::Tracking &&
+              after.message.find("Final scan discarded") != std::string::npos,
+          "short uncovered EOF tail incorrectly changed tracking to lost");
+  }
 }
 
 void tracking_gap_preserves_original_rejection() {
@@ -357,6 +432,9 @@ int main() {
     invalid_input_cannot_build_a_map();
     late_events_and_clock_change();
     missing_imu_coverage_rejects_scans();
+    short_final_imu_tail(false, false);
+    short_final_imu_tail(true, false);
+    short_final_imu_tail(false, true);
     bounded_queue_and_invalid_packet_timing();
     tracking_gap_preserves_original_rejection();
     std::cout << "Voxel SLAM synthetic checks passed.\n";

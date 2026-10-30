@@ -1,0 +1,14 @@
+{
+  "connector_interference": true,
+  "camera_origin_in_lidar_mm": [
+    -31.0,
+    -25.0,
+    75.0
+  ],
+  "phone_body_center_in_lidar_mm": [
+    -36.92499923706055,
+    -1.25,
+    13.25
+  ],
+  "calibration_verified": false
+}

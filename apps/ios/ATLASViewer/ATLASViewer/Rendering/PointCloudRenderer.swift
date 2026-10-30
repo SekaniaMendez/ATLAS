@@ -7,7 +7,9 @@ private struct ViewerUniforms {
     var viewProjection: simd_float4x4
     var pointSize: Float
     var worldScale: Float
-    var padding = SIMD2<Float>(repeating: 0)
+    // x = RGB enabled, y = optional upper map-Z cut in metres. The greatest
+    // finite Float disables the cut without changing the 80-byte Metal ABI.
+    var padding = SIMD2<Float>(0, .greatestFiniteMagnitude)
 }
 
 private struct CameraPointUniforms {
@@ -25,12 +27,21 @@ private struct CameraVertex {
     var textureCoordinate: SIMD2<Float>
 }
 
+// Explicit float4 fields keep Swift and Metal layouts identical (32-byte stride).
+private struct GeometryVertex {
+    var position: SIMD4<Float>
+    var color: SIMD4<Float>
+}
+
 final class PointCloudRenderer: NSObject, MTKViewDelegate {
     private let model: PointCloudModel
+    private let geometry: LiveGeometryModel
     private let camera: CameraSessionController
     private let calibration: CalibrationStore
     private let commandQueue: MTLCommandQueue
     private let viewerPipeline: MTLRenderPipelineState
+    private let surfacePipeline: MTLRenderPipelineState
+    private let axisPipeline: MTLRenderPipelineState
     private let cameraBackgroundPipeline: MTLRenderPipelineState
     private let cameraPointPipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
@@ -39,15 +50,31 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
     private var pointBuffer: MTLBuffer?
     private var pointCount = 0
     private var loadedSequence: UInt32 = .max
+    private var loadedGeometryGeneration: UInt64 = .max
+    private var geometryVertexBuffer: MTLBuffer?
+    private var geometryIndexBuffer: MTLBuffer?
+    private var geometryIndexCount = 0
+    private var axisBuffer: MTLBuffer?
+    private var axisVertexCount = 0
+    private var fittedGeometry = false
     private var yaw: Float = 0
     private var pitch: Float = -0.15
     private var distance: Float = 7
+    private var viewTarget = SIMD3<Float>(0, 0, -1.4)
     private var isWorldFrame = false
+    private var mapViewActive = false
+    private var hasRgb = false
+    private var showPoints = true
+    private var showSurfaces = true
+    private var showAxes = true
+    private var showCeiling = false
+    private var ceilingCutHeightM: Float?
     private let cameraLock = NSLock()
 
     init?(
         view: MTKView,
         model: PointCloudModel,
+        geometry: LiveGeometryModel,
         camera: CameraSessionController,
         calibration: CalibrationStore
     ) {
@@ -79,6 +106,14 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
               let cameraPointPipeline = makePipeline(
                   vertex: "cameraPointVertex",
                   fragment: "cameraPointFragment"
+              ),
+              let surfacePipeline = makePipeline(
+                  vertex: "geometryVertex",
+                  fragment: "surfaceFragment"
+              ),
+              let axisPipeline = makePipeline(
+                  vertex: "geometryVertex",
+                  fragment: "axisFragment"
               )
         else { return nil }
 
@@ -102,10 +137,13 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
         else { return nil }
 
         self.model = model
+        self.geometry = geometry
         self.camera = camera
         self.calibration = calibration
         self.commandQueue = commandQueue
         self.viewerPipeline = viewerPipeline
+        self.surfacePipeline = surfacePipeline
+        self.axisPipeline = axisPipeline
         self.cameraBackgroundPipeline = cameraBackgroundPipeline
         self.cameraPointPipeline = cameraPointPipeline
         self.depthState = depthState
@@ -159,19 +197,67 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
             color = float3(1.0, 0.45, 0.05);
         }
 
+        if (uniforms.padding.x > 0.5) {
+            color = (point.reserved >> 8) != 0
+                ? float3(point.reflectivity, point.tag, point.reserved & 255) / 255.0
+                : mix(float3(0.05, 0.35, 1.0), float3(1.0, 0.9, 0.2), intensity);
+        }
         ViewerPointOut output;
         output.position = uniforms.viewProjection * float4(world, 1.0);
         output.pointSize = uniforms.pointSize;
-        output.color = float4(color, 1.0);
+        output.color = float4(color, livox.z >= uniforms.padding.y ? 0.0 : 1.0);
         return output;
     }
 
     fragment float4 viewerPointFragment(
         ViewerPointOut input [[stage_in]],
         float2 pointCoordinate [[point_coord]]) {
-        if (distance(pointCoordinate, float2(0.5)) > 0.5) {
+        if (input.color.a < 0.5 || distance(pointCoordinate, float2(0.5)) > 0.5) {
             discard_fragment();
         }
+        return input.color;
+    }
+
+    struct GeometryVertex {
+        float4 position;
+        float4 color;
+    };
+
+    struct GeometryOut {
+        float4 position [[position]];
+        float3 worldPosition;
+        float4 color;
+        float mapHeight;
+        float ceilingCutHeight;
+    };
+
+    vertex GeometryOut geometryVertex(
+        uint vertexID [[vertex_id]],
+        const device GeometryVertex* vertices [[buffer(0)]],
+        constant ViewerUniforms& uniforms [[buffer(1)]]) {
+        const GeometryVertex source = vertices[vertexID];
+        const float3 map = source.position.xyz;
+        // Identical map-to-view conversion and scale as the point shader.
+        const float3 world = float3(-map.y, map.z, -map.x) * uniforms.worldScale;
+        GeometryOut output;
+        output.position = uniforms.viewProjection * float4(world, 1.0);
+        output.worldPosition = world;
+        output.color = source.color;
+        output.mapHeight = map.z;
+        output.ceilingCutHeight = uniforms.padding.y;
+        return output;
+    }
+
+    fragment float4 surfaceFragment(GeometryOut input [[stage_in]]) {
+        if (input.mapHeight >= input.ceilingCutHeight) discard_fragment();
+        const float3 crossProduct = cross(dfdx(input.worldPosition), dfdy(input.worldPosition));
+        const float3 normal = crossProduct / max(length(crossProduct), 0.000001);
+        const float diffuse = abs(dot(normal, normalize(float3(0.4, 0.7, 0.6))));
+        return float4(input.color.rgb * (0.45 + 0.55 * diffuse), 1.0);
+    }
+
+    fragment float4 axisFragment(GeometryOut input [[stage_in]]) {
+        if (input.mapHeight >= input.ceilingCutHeight) discard_fragment();
         return input.color;
     }
 
@@ -284,7 +370,7 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
         guard !shouldRenderCamera else { return }
         cameraLock.lock()
         yaw -= deltaX * 0.006
-        pitch = min(1.35, max(-1.35, pitch - deltaY * 0.006))
+        pitch = min(.pi / 2, max(-1.35, pitch - deltaY * 0.006))
         cameraLock.unlock()
     }
 
@@ -297,17 +383,41 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
+    func setVisibility(points: Bool, surfaces: Bool, axes: Bool,
+                       ceiling: Bool, ceilingCutHeightM: Float?) {
+        cameraLock.lock()
+        showPoints = points
+        showSurfaces = surfaces
+        showAxes = axes
+        showCeiling = ceiling
+        self.ceilingCutHeightM = ceilingCutHeightM.flatMap { $0.isFinite ? $0 : nil }
+        cameraLock.unlock()
+    }
+
+    /// A user action, not a persistent mode: subsequent drags may orbit freely.
+    func showTopView() {
+        guard !shouldRenderCamera else { return }
+        cameraLock.lock()
+        if isWorldFrame || mapViewActive {
+            yaw = 0
+            pitch = .pi / 2
+        }
+        cameraLock.unlock()
+    }
+
     private var shouldRenderCamera: Bool {
         cameraLock.lock()
-        let worldFrame = isWorldFrame
+        let worldFrame = isWorldFrame || mapViewActive
         cameraLock.unlock()
-        // A fixed map cannot use the live LiDAR-to-camera extrinsic alone.
-        // A world-to-camera pose would be required for a valid AR overlay.
-        return !worldFrame && camera.shouldRenderCamera
+        // World-frame camera preview is opt-in and background-only: a fixed map
+        // cannot use the live LiDAR-to-camera extrinsic as an AR overlay.
+        return camera.shouldRenderCamera && (!worldFrame || camera.cameraPreviewRequested)
     }
 
     func draw(in view: MTKView) {
+        geometry.expireIfStale()
         updatePointBuffer(device: view.device)
+        updateGeometryBuffers(device: view.device)
         guard let drawable = view.currentDrawable,
               let pass = view.currentRenderPassDescriptor,
               let commandBuffer = commandQueue.makeCommandBuffer()
@@ -338,7 +448,12 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
         let orientation = view.window?.windowScene?.interfaceOrientation ?? .portrait
         let viewportSize = view.bounds.size
         let displayMode = camera.displayMode
-        if displayMode == .calibrationOverlay {
+        cameraLock.lock()
+        let canProjectSensorPoints = !isWorldFrame && !mapViewActive
+        cameraLock.unlock()
+        // Showing the camera while SLAM is running is for framing/recording.
+        // Never project world coordinates using the sensor extrinsic transform.
+        if displayMode == .calibrationOverlay || !canProjectSensorPoints {
             let vertices = cameraVertices(
                 frame: frame,
                 orientation: orientation,
@@ -364,7 +479,7 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
             )
         }
 
-        if pointCount > 0, let pointBuffer {
+        if canProjectSensorPoints, pointCount > 0, let pointBuffer {
             let displayToImage = frame.displayTransform(
                 for: orientation,
                 viewportSize: viewportSize
@@ -410,24 +525,138 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
     ) {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass)
         else { return }
-        guard pointCount > 0, let pointBuffer else {
-            encoder.endEncoding()
-            return
-        }
 
         let aspect = Float(view.drawableSize.width / max(1, view.drawableSize.height))
+        cameraLock.lock()
+        // A geometry message can precede the first world-frame cloud. Do not
+        // mix an old sensor/demo buffer with map surfaces or a map-height cut.
+        let drawPoints = showPoints && (!mapViewActive || isWorldFrame)
+        let drawSurfaces = showSurfaces
+        let drawAxes = showAxes
+        let cutHeight = !showCeiling && (isWorldFrame || mapViewActive)
+            ? ceilingCutHeightM ?? .greatestFiniteMagnitude : .greatestFiniteMagnitude
+        cameraLock.unlock()
         var uniforms = ViewerUniforms(
             viewProjection: projectionMatrix(aspect: aspect) * viewMatrix(),
             pointSize: max(1.5, Float(view.contentScaleFactor) * 1.25),
-            worldScale: 0.18
+            worldScale: 0.18,
+            padding: SIMD2<Float>(hasRgb ? 1 : 0, cutHeight)
         )
-        encoder.setRenderPipelineState(viewerPipeline)
         encoder.setDepthStencilState(depthState)
-        encoder.setVertexBuffer(pointBuffer, offset: 0, index: 0)
         encoder.setVertexBytes(&uniforms, length: MemoryLayout<ViewerUniforms>.stride, index: 1)
-        encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: pointCount)
+        if drawSurfaces, geometryIndexCount > 0,
+           let geometryVertexBuffer, let geometryIndexBuffer {
+            encoder.setRenderPipelineState(surfacePipeline)
+            encoder.setVertexBuffer(geometryVertexBuffer, offset: 0, index: 0)
+            // Let measured points remain visible where they coincide with a fitted plane.
+            encoder.setDepthBias(0.0001, slopeScale: 0.5, clamp: 0.001)
+            encoder.drawIndexedPrimitives(type: .triangle, indexCount: geometryIndexCount,
+                                          indexType: .uint32, indexBuffer: geometryIndexBuffer,
+                                          indexBufferOffset: 0)
+            encoder.setDepthBias(0, slopeScale: 0, clamp: 0)
+        }
+        if drawPoints, pointCount > 0, let pointBuffer {
+            encoder.setRenderPipelineState(viewerPipeline)
+            encoder.setVertexBuffer(pointBuffer, offset: 0, index: 0)
+            encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: pointCount)
+        }
+        if drawAxes, axisVertexCount > 0, let axisBuffer {
+            encoder.setRenderPipelineState(axisPipeline)
+            encoder.setVertexBuffer(axisBuffer, offset: 0, index: 0)
+            encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: axisVertexCount)
+        }
         encoder.endEncoding()
     }
+
+    private func updateGeometryBuffers(device: MTLDevice?) {
+        guard let device,
+              let snapshot = geometry.snapshot(after: loadedGeometryGeneration) else { return }
+        loadedGeometryGeneration = snapshot.generation
+        // Clearing or replacing a snapshot never leaves previous triangles behind.
+        geometryVertexBuffer = nil
+        geometryIndexBuffer = nil
+        axisBuffer = nil
+        geometryIndexCount = 0
+        axisVertexCount = 0
+        cameraLock.lock()
+        if !snapshot.surfaces.isEmpty {
+            if !mapViewActive { yaw = 0; pitch = .pi / 2 }
+            mapViewActive = true
+        } else if snapshot.sourceRevision == 0 && mapViewActive {
+            // New connection/session: the next map starts from above. Temporary
+            // empty/stale snapshots retain their source revision and view angle.
+            yaw = 0
+            pitch = .pi / 2
+        }
+        cameraLock.unlock()
+        guard !snapshot.surfaces.isEmpty else {
+            // Reset ordering marks a new connection/session. A stale or temporarily
+            // empty surface snapshot in the same map must not reframe the camera.
+            if snapshot.sourceRevision == 0 { fittedGeometry = false }
+            return
+        }
+
+        var vertices = [GeometryVertex]()
+        var indices = [UInt32]()
+        var axes = [GeometryVertex]()
+        vertices.reserveCapacity(snapshot.surfaces.reduce(0) { $0 + $1.vertices.count })
+        indices.reserveCapacity(snapshot.surfaces.reduce(0) { $0 + $1.indices.count })
+        axes.reserveCapacity(snapshot.surfaces.count * 6)
+        var lower = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
+        var upper = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
+        for surface in snapshot.surfaces {
+            let base = UInt32(vertices.count)
+            let color = Self.surfaceColors[Int(surface.id % UInt32(Self.surfaceColors.count))]
+            for point in surface.vertices {
+                vertices.append(GeometryVertex(position: SIMD4(point, 1), color: color))
+                lower = simd_min(lower, point)
+                upper = simd_max(upper, point)
+            }
+            indices.append(contentsOf: surface.indices.map { $0 + base })
+            let length = min(0.6, max(0.25, sqrt(surface.areaSquareMeters) * 0.15))
+            // A small normal offset prevents tangential axes from z-fighting the plane.
+            let origin = surface.origin + surface.axes[2] * 0.008
+            for axis in 0..<3 {
+                let color = Self.axisColors[axis]
+                axes.append(GeometryVertex(position: SIMD4(origin, 1), color: color))
+                axes.append(GeometryVertex(position: SIMD4(origin + surface.axes[axis] * length, 1),
+                                           color: color))
+            }
+        }
+        geometryVertexBuffer = Self.makeBuffer(vertices, device: device)
+        geometryIndexBuffer = Self.makeBuffer(indices, device: device)
+        axisBuffer = Self.makeBuffer(axes, device: device)
+        if geometryVertexBuffer != nil && geometryIndexBuffer != nil {
+            geometryIndexCount = indices.count
+        }
+        if axisBuffer != nil { axisVertexCount = axes.count }
+        if !fittedGeometry, !vertices.isEmpty {
+            let center = (lower + upper) * 0.5
+            let radius = simd_length(upper - lower) * 0.5 * 0.18
+            cameraLock.lock()
+            viewTarget = SIMD3(-center.y, center.z, -center.x) * 0.18
+            distance = min(30, max(1.2, radius * 2.8))
+            cameraLock.unlock()
+            fittedGeometry = true
+        }
+    }
+
+    private static func makeBuffer<T>(_ values: [T], device: MTLDevice) -> MTLBuffer? {
+        guard !values.isEmpty else { return nil }
+        return values.withUnsafeBytes { bytes in
+            guard let base = bytes.baseAddress else { return nil }
+            return device.makeBuffer(bytes: base, length: bytes.count, options: .storageModeShared)
+        }
+    }
+
+    private static let surfaceColors: [SIMD4<Float>] = [
+        SIMD4(0.18, 0.72, 0.86, 1), SIMD4(0.95, 0.57, 0.22, 1),
+        SIMD4(0.62, 0.52, 0.88, 1), SIMD4(0.28, 0.75, 0.52, 1),
+        SIMD4(0.87, 0.38, 0.49, 1), SIMD4(0.35, 0.57, 0.91, 1),
+    ]
+    private static let axisColors: [SIMD4<Float>] = [
+        SIMD4(1, 0.18, 0.18, 1), SIMD4(0.2, 1, 0.25, 1), SIMD4(0.2, 0.5, 1, 1),
+    ]
 
     private func makeCameraTextures(pixelBuffer: CVPixelBuffer) -> (
         y: MTLTexture,
@@ -522,7 +751,23 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
         loadedSequence = snapshot.sequence
         pointCount = snapshot.pointCount
         cameraLock.lock()
+        if snapshot.isWorldFrame && !mapViewActive {
+            yaw = 0
+            pitch = .pi / 2
+            viewTarget = .zero
+        }
+        if mapViewActive && !snapshot.isWorldFrame {
+            // A sensor/demo cloud is centered near its own origin. Retaining a
+            // distant map's orbit target can put that cloud completely offscreen.
+            viewTarget = SIMD3(0, 0, -1.4)
+            distance = 7
+            yaw = 0
+            pitch = -0.15
+            fittedGeometry = false
+        }
+        mapViewActive = snapshot.isWorldFrame
         isWorldFrame = snapshot.isWorldFrame
+        hasRgb = snapshot.hasRgb
         cameraLock.unlock()
         pointBuffer = snapshot.data.withUnsafeBytes { bytes in
             guard let baseAddress = bytes.baseAddress else { return nil }
@@ -535,15 +780,18 @@ final class PointCloudRenderer: NSObject, MTKViewDelegate {
         let localYaw = yaw
         let localPitch = pitch
         let localDistance = distance
+        let target = viewTarget
         cameraLock.unlock()
-
-        let target = SIMD3<Float>(0, 0, -1.4)
         let eye = target + SIMD3<Float>(
             localDistance * sin(localYaw) * cos(localPitch),
             localDistance * sin(localPitch),
             localDistance * cos(localYaw) * cos(localPitch)
         )
-        return lookAt(eye: eye, center: target, up: SIMD3<Float>(0, 1, 0))
+        // At exactly +Z in the SLAM map, forward and the usual up vector are
+        // parallel. Use the continuous yaw-dependent limit of the orbit basis.
+        let up = abs(cos(localPitch)) < 0.001
+            ? SIMD3<Float>(-sin(localYaw), 0, -cos(localYaw)) : SIMD3<Float>(0, 1, 0)
+        return lookAt(eye: eye, center: target, up: up)
     }
 
     private func projectionMatrix(aspect: Float) -> simd_float4x4 {

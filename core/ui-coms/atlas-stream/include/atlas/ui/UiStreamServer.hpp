@@ -4,6 +4,8 @@
 #include <atlas/ui/ui_stream_server_config.hpp>
 #include <atlas/ui/WireProtocol.hpp>
 #include <cstdint>
+#include <functional>
+#include <atlas/sensors/CameraRgbFrame.hpp>
 #include <memory>
 #include <string>
 
@@ -15,12 +17,17 @@ struct UiStreamServerStats {
   uint64_t dropped_points = 0;
   uint64_t warnings_sent = 0;
   uint64_t slam_statuses_sent = 0;
+  uint64_t geometry_snapshots_sent = 0;
+  uint64_t geometry_errors = 0;
+  uint64_t camera_frames_received = 0;
+  uint64_t camera_frames_rejected = 0;
   bool client_connected = false;
 };
 
 class UiStreamServer final : public atlas::sensors::ISensorDataSink {
  public:
-  explicit UiStreamServer(UiStreamServerConfig config = {});
+  using CameraHandler = std::function<bool(sensors::CameraRgbFrame)>;
+  explicit UiStreamServer(UiStreamServerConfig config = {}, CameraHandler camera_handler = {});
   ~UiStreamServer() override;
 
   UiStreamServer(const UiStreamServer&) = delete;

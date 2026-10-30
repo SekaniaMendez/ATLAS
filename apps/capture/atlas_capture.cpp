@@ -82,7 +82,15 @@ int main(int argc, char** argv) {
     storage::CaptureReader reader(directory);
     std::cout << "Session metadata:\n" << reader.metadata() << '\n';
     sensors::SensorDataBus processed;
-    preprocessing::SensorPreprocessor preprocessor(processed);
+    preprocessing::SensorPreprocessorConfig preprocessing_config;
+    // The probe writes this source declaration first, including in older captures.
+    // Do not interpret arbitrary sensors' tags as MID-360 confidence fields.
+    preprocessing_config.filter_mid360_low_confidence_tags =
+        reader.metadata().starts_with("source=MID-360 raw bus\n");
+    preprocessing::SensorPreprocessor preprocessor(processed, preprocessing_config);
+    if (command == "replay")
+      std::cout << "[ATLAS PREPROCESSING] MID-360 low-confidence tag filtering "
+                << (preprocessing_config.filter_mid360_low_confidence_tags ? "enabled" : "disabled") << '\n';
     std::shared_ptr<slam::VoxelSlamEngine> slam_engine;
     sensors::SensorDataBus::SubscriptionId slam_subscription = 0;
     if (use_slam) {
@@ -170,6 +178,12 @@ int main(int argc, char** argv) {
 #ifdef ATLAS_HAS_UI_STREAM
     if (server) { processed.unsubscribe(subscription); server->stop(); }
 #endif
+    if (command == "replay") {
+      const auto stats = preprocessor.stats();
+      std::cout << "[ATLAS PREPROCESSING] lidar_points_received=" << stats.lidar_points_received
+                << " lidar_points_rejected=" << stats.lidar_points_rejected
+                << " lidar_points_rejected_by_tag=" << stats.lidar_points_rejected_by_tag << '\n';
+    }
     std::cout << (running ? "Complete" : "Interrupted") << ": events=" << count << " lidar_points=" << points << '\n';
     return failed ? 1 : running ? 0 : 130;
   } catch (const std::exception& e) { std::cerr << "[ATLAS CAPTURE] " << e.what() << '\n'; return 1; }

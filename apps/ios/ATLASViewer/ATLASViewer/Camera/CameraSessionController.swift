@@ -38,12 +38,23 @@ enum CameraLensPreference: String, CaseIterable, Identifiable {
 final class CameraSessionController: NSObject, ObservableObject, ARSessionDelegate {
     @Published private(set) var isRunning = false
     @Published private(set) var statusText = "Cámara detenida"
-    @Published private(set) var displayMode: CameraDisplayMode = .rgbCloud
+    // Start with the actual camera image visible. A provisional rigid transform
+    // can project every LiDAR point outside the image, making rgbCloud black.
+    @Published private(set) var displayMode: CameraDisplayMode = .calibrationOverlay
+    @Published private(set) var cameraPreviewRequested = false
     @Published private(set) var lensPreference: CameraLensPreference = .wide
     @Published private(set) var activeLensName = "1×"
 
     let session = ARSession()
     let captureRecorder = CameraCaptureRecorder()
+    let fusionEncoder = CameraFusionEncoder()
+    @Published var fusionEnabled = true { didSet { updateFusionState() } }
+    private var activeLensKey = "wide"
+    var activeLensIdentifier: String { activeLensKey }
+
+    private func updateFusionState() {
+        fusionEncoder.setActive(enabled: fusionEnabled && shouldRenderCamera, lens: activeLensKey)
+    }
 
     private let stateLock = NSLock()
     private var requestedRunning = false
@@ -87,6 +98,7 @@ final class CameraSessionController: NSObject, ObservableObject, ARSessionDelega
         }
 
         let selectedType = configuration.videoFormat.captureDeviceType
+        activeLensKey = selectedType == .builtInUltraWideCamera ? "ultraWide" : "wide"
         activeLensName = selectedType == .builtInUltraWideCamera ? "0.5×" : "1×"
         ultraWideFallback = lensPreference == .ultraWide
             && selectedType != .builtInUltraWideCamera
@@ -105,6 +117,16 @@ final class CameraSessionController: NSObject, ObservableObject, ARSessionDelega
 
     func toggleDisplayMode() {
         displayMode = displayMode == .rgbCloud ? .calibrationOverlay : .rgbCloud
+    }
+
+    /// Changes presentation only; never restarts ARKit or interrupts recording.
+    func showCameraView() {
+        cameraPreviewRequested = true
+        displayMode = .calibrationOverlay
+    }
+
+    func showMapView() {
+        cameraPreviewRequested = false
     }
 
     func selectLens(_ lens: CameraLensPreference) {
@@ -149,6 +171,7 @@ final class CameraSessionController: NSObject, ObservableObject, ARSessionDelega
 
     func sessionWasInterrupted(_ session: ARSession) {
         DispatchQueue.main.async { [weak self] in self?.captureRecorder.stop() }
+        fusionEncoder.setActive(enabled: false, lens: activeLensKey)
         publish(running: shouldRenderCamera, status: "Cámara interrumpida")
     }
 
@@ -163,10 +186,13 @@ final class CameraSessionController: NSObject, ObservableObject, ARSessionDelega
         stateLock.lock()
         requestedRunning = value
         stateLock.unlock()
+        updateFusionState()
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        guard shouldRenderCamera else { return }
         captureRecorder.submit(frame)
+        fusionEncoder.submit(frame)
     }
 
     private func publish(running: Bool, status: String) {

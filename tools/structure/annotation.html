@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ATLAS · Etiquetar el entorno</title>
+  <link rel="stylesheet" href="/annotation.css">
+  <script defer src="/annotation_selection.js"></script>
+  <script defer src="/annotation.js"></script>
+</head>
+<body>
+  <header>
+    <div class="identity"><span class="brand">ATLAS</span><div><h1>Etiquetar el entorno</h1><p>Revisa la estructura y prepara ejemplos de objetos.</p></div></div>
+    <div class="capture"><label for="dataset">Captura</label><select id="dataset" disabled><option>Cargando capturas…</option></select></div>
+    <button id="export" class="secondary" disabled>Exportar datos</button>
+  </header>
+  <main>
+    <section class="workspace" aria-label="Nube de puntos tridimensional">
+      <canvas id="cloud" tabindex="0" aria-label="Nube de puntos. Arrastra para girar; pellizca para acercar y desliza dos dedos para desplazar. Toca un grupo para seleccionarlo. Con teclado: flechas para girar y más o menos para acercar."></canvas>
+      <div class="toolbar" role="toolbar" aria-label="Controles de vista">
+        <button id="fit" title="Encuadrar la región principal, sin descartar puntos">Encuadrar</button>
+        <button id="focus" aria-label="Acercar selección" disabled>Selección</button>
+        <button id="zoomIn" class="zoom" aria-label="Acercar">+</button>
+        <button id="zoomOut" class="zoom" aria-label="Alejar">−</button>
+        <details class="view-menu"><summary>Vista</summary><div>
+          <button id="fitAll">Ver toda la captura</button>
+          <button id="top">Vista superior</button>
+          <button id="front">Vista frontal</button>
+          <label class="isolate"><input id="isolate" type="checkbox"> Aislar selección</label>
+        </div></details>
+      </div>
+      <div class="layer-panel" aria-label="Capas visibles"><strong>Capas</strong><label><input id="layerFloor" type="checkbox" checked>Suelo</label><label><input id="layerWall" type="checkbox" checked>Paredes</label><label><input id="layerCeiling" type="checkbox">Techo</label><label><input id="layerObjects" type="checkbox" checked>Objetos</label><label><input id="layerUnassigned" type="checkbox" checked>Sin agrupar</label></div>
+      <div class="scene-summary"><span id="pointCount">— puntos</span><span id="captureSummary">— grupos</span></div>
+      <div id="sceneError" class="scene-error" role="alert" hidden></div>
+      <div id="loading" class="loading">Cargando mediciones…</div>
+      <div class="view-help"><span class="desktop-help">Arrastrar: girar · rueda: zoom · botón derecho: desplazar</span><span class="touch-help">Lápiz: pintar · dedo: girar · pellizco: zoom</span><span>Para pintar con dedo o ratón, activa «Pintar puntos»</span></div>
+      <div class="legend" aria-label="Leyenda de la estructura"><span><i class="floor"></i>Suelo</span><span><i class="wall"></i>Pared</span><span><i class="ceiling"></i>Techo</span><span><i class="candidate"></i>Objetos: colores por grupo</span></div>
+    </section>
+    <aside>
+      <section id="discardPanel" class="inline-confirm" role="alertdialog" aria-labelledby="discardTitle" hidden><strong id="discardTitle">Hay puntos seleccionados sin guardar</strong><p>Cambiar de captura descartará este borrador. Las etiquetas guardadas se conservan.</p><button id="discardAndSwitch">Descartar y cambiar captura</button><button id="keepDraft">Seguir etiquetando</button></section>
+      <section class="point-tools" aria-label="Selección de puntos">
+        <div class="section-heading"><h2>Crear un objeto con puntos</h2><span id="draftCount" class="badge">0 puntos</span></div>
+        <div class="mode-buttons" role="group" aria-label="Modo de interacción"><button id="orbitMode" class="active" aria-pressed="true">Girar / elegir grupo</button><button id="brushMode" aria-pressed="false">Pintar puntos</button></div>
+        <p class="small">Apple Pencil pinta directamente. Para usar dedo o ratón, activa «Pintar puntos».</p>
+        <div class="brush-row"><label for="brushRadius">Radio <output id="brushRadiusValue">14 px</output></label><input id="brushRadius" type="range" min="3" max="48" value="14" step="1"><label class="erase-label"><input id="eraseBrush" type="checkbox">Borrar selección</label></div>
+        <div class="draft-actions"><button id="undoStroke" disabled>Deshacer trazo</button><button id="clearDraft" disabled>Cancelar selección</button></div>
+        <p id="draftHelp" class="small">Sólo se seleccionan puntos visibles. Pinta, revisa y guarda una categoría.</p>
+      </section>
+      <details class="progress-panel" aria-label="Progreso de revisión">
+        <summary class="progress-heading"><span>Progreso de revisión</span><span id="revision">Revisión 0</span></summary>
+        <div class="numbers"><div><strong id="reviewedCount">0</strong><span>Etiquetados</span></div><div><strong id="pendingCount">0</strong><span>Pendientes</span></div><div><strong id="ignoredCount">0</strong><span>Ignorados</span></div></div>
+        <progress id="progress" value="0" max="1" aria-label="Grupos revisados"></progress>
+        <p class="small">Las propuestas geométricas no se usan para entrenar hasta que las confirmes.</p>
+      </details>
+      <details id="groupPanel" class="group-panel" aria-label="Grupos de la captura" open>
+        <summary class="section-heading">Lista de grupos</summary>
+        <button id="clearSelection" class="text-button" disabled>Quitar selección</button>
+        <div class="filter-row"><label class="sr-only" for="filter">Mostrar grupos</label><select id="filter"><option value="all">Todos</option><option value="object">Posibles objetos</option><option value="structure">Estructura</option><option value="pending">Pendientes</option><option value="reviewed">Etiquetados</option><option value="unassigned">Sin agrupar / ruido</option></select><label class="sr-only" for="search">Buscar grupo o categoría</label><input id="search" type="search" placeholder="Buscar…" autocomplete="off"></div>
+        <p id="listCount" class="small list-count">—</p>
+        <div id="groups" class="group-list" aria-label="Seleccionar grupos"></div>
+      </details>
+      <section class="editor" aria-label="Etiqueta de los grupos seleccionados">
+        <div class="quick-select"><label for="quickGroup">Grupo u objeto</label><select id="quickGroup" disabled><option value="">Selecciona un grupo</option></select></div>
+        <div class="section-heading"><h2 id="selectionTitle">Selecciona un grupo</h2><span id="selectionCount" class="badge" hidden></span></div>
+        <div id="selectionDetails" class="selection-details">Haz clic en la nube o en la lista. Puedes seleccionar varios fragmentos del mismo objeto.</div>
+        <div id="proposal" class="proposal" hidden></div>
+        <div class="category-heading"><label for="category">Categoría</label><button id="newCategory" class="text-button" type="button" aria-expanded="false" aria-controls="categoryForm" disabled>Nueva categoría</button></div>
+        <select id="category" disabled><option value="">Elige una categoría</option></select>
+        <form id="categoryForm" class="category-form" hidden>
+          <label for="categoryName">Nombre de la nueva categoría</label>
+          <input id="categoryName" type="text" maxlength="80" autocomplete="off" placeholder="Por ejemplo: lámpara" aria-describedby="categoryHint categoryFeedback" required>
+          <p id="categoryHint" class="small">Hasta 80 caracteres. Estará disponible en todas las capturas. Crear la categoría no etiqueta los puntos.</p>
+          <p id="categoryFeedback" role="status" aria-live="polite"></p>
+          <div class="category-form-actions"><button id="createCategory" type="submit" class="primary">Crear categoría</button><button id="cancelCategory" type="button">Cancelar</button></div>
+        </form>
+        <label for="notes">Nota <span class="optional">(opcional)</span></label><textarea id="notes" rows="2" maxlength="500" placeholder="Por ejemplo: silla parcial junto a la pared" disabled></textarea>
+        <button id="save" class="primary wide" disabled>Guardar etiqueta</button>
+        <button id="savePoints" class="primary wide" hidden disabled>Crear objeto etiquetado</button>
+        <button id="acceptProposal" class="secondary wide" hidden disabled>Confirmar propuesta</button>
+        <p id="mergeHint" class="small">Al guardar varios grupos juntos, se consideran una misma instancia del objeto.</p>
+        <div class="review-actions"><button id="ignore" disabled>Ignorar selección</button><button id="reset" disabled>Volver a pendiente</button></div>
+        <button id="removeManual" class="secondary wide" hidden>Deshacer objeto manual</button>
+        <div id="removePanel" class="inline-confirm" hidden><p>Los puntos volverán a sus grupos originales. Las demás etiquetas guardadas se conservan.</p><button id="confirmRemove">Devolver puntos</button><button id="cancelRemove">Cancelar</button></div>
+      </section>
+      <section class="messages" aria-label="Estado y exportaciones">
+        <p id="status" role="status" aria-live="polite">Conectando con el archivo local…</p>
+        <button id="reload" class="secondary wide" hidden>Recargar etiquetas guardadas</button>
+        <div id="downloads" aria-label="Archivos de entrenamiento exportados"></div>
+        <details id="diagnostics" hidden><summary>Observaciones de la captura</summary><ul id="warnings"></ul></details>
+      </section>
+    </aside>
+  </main>
+</body>
+</html>

@@ -32,6 +32,22 @@ int main() {
     std::string damaged = serialized.str(); damaged[damaged.size() - 12] ^= 1;
     std::istringstream bad(damaged); rejects([&] { (void)VoxelMapArchive::read(bad, 10000000); });
 
+    // A cleared cell stays unknown across save/load; no stale block is resurrected.
+    REQUIRE(map.erase(*map.voxel_key_for({.x_m = 100})));
+    VoxelMapArchive::save(temp.path / "erased", map);
+    auto erased = VoxelMapArchive::load(temp.path / "erased");
+    REQUIRE(erased.find_at({.x_m = 100}) == nullptr);
+    REQUIRE(erased.voxel_count() == 1 && erased.accepted_hit_count() == 20);
+    const auto kept_key = *erased.voxel_key_for({.x_m = -1.1, .z_m = 0.1});
+    REQUIRE(erased.erase_samples(kept_key, [](const MapPoint& p) { return p.reflectivity == 18; }) == 1);
+    VoxelMapArchive::save(temp.path / "partial-erased", erased);
+    auto partial = VoxelMapArchive::load(temp.path / "partial-erased");
+    REQUIRE(partial.find(kept_key)->samples.size() == 2 && partial.accepted_hit_count() == 2);
+    REQUIRE(partial.erase(kept_key));
+    VoxelMapArchive::save(temp.path / "blank", partial);
+    auto blank = VoxelMapArchive::load(temp.path / "blank");
+    REQUIRE(blank.voxel_count() == 0 && blank.block_count() == 0);
+
     const auto paged_path = temp.path / "paged";
     const auto reservation = PagedVoxelMap::block_payload_reservation(3);
     {

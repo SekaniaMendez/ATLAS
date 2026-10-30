@@ -4,6 +4,10 @@ target_sources(atlas_ui_stream
   PRIVATE
     src/UiStreamServer.cpp
     src/WireProtocol.cpp
+    src/CameraWireProtocol.cpp
+    src/CameraReceiver.cpp
+    src/GeometryWireProtocol.cpp
+    src/LiveGeometryWorker.cpp
 )
 
 target_include_directories(atlas_ui_stream
